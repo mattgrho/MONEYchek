@@ -1,0 +1,8 @@
+node_modules
+dist
+db/migrations
+package-lock.json
+playwright-report
+test-results
+coverage
+.replit
