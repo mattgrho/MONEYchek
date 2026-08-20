@@ -131,12 +131,6 @@ export function JournalsPage({ me }: { me: Me }) {
     .filter((a) => a.active && a.postable)
     .sort((a, b) => (a.number ?? '').localeCompare(b.number ?? '') || a.name.localeCompare(b.name));
 
-  const accountLabel = (id: string): string => {
-    const a = accounts.data?.items.find((x) => x.id === id);
-    if (!a) return id;
-    return a.number ? `${a.number} · ${a.name}` : a.name;
-  };
-
   // ----- form derived values -----
   const totalDebits = lines.reduce((sum, l) => addDecimalStrings(sum, l.debit), '0.00');
   const totalCredits = lines.reduce((sum, l) => addDecimalStrings(sum, l.credit), '0.00');

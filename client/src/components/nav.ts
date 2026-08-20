@@ -2,12 +2,9 @@ import {
   Banknote,
   BarChart3,
   BookOpenCheck,
-  FileText,
   LayoutDashboard,
   Receipt,
   Settings,
-  ShoppingCart,
-  Landmark,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -42,6 +39,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Estimates', to: '/sales/estimates', permission: 'estimates.view' },
       { label: 'Invoices', to: '/sales/invoices', permission: 'invoices.view' },
       { label: 'Payments', to: '/sales/payments', permission: 'customer_payments.view' },
+      { label: 'Sales receipts', to: '/sales/receipts', permission: 'sales_receipts.view' },
       { label: 'Credit memos', to: '/sales/credits', permission: 'credit_memos.view' },
       { label: 'Deposits', to: '/sales/deposits', permission: 'deposits.view' },
       { label: 'Products & services', to: '/sales/products', permission: 'products.view' },

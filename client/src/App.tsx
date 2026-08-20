@@ -15,6 +15,16 @@ import { OnboardingPage } from '@/pages/OnboardingPage';
 import { UsersSettingsPage } from '@/pages/settings/UsersSettingsPage';
 import { CompanySettingsPage } from '@/pages/settings/CompanySettingsPage';
 import { BrandSettingsPage } from '@/pages/settings/BrandSettingsPage';
+import { CustomersPage } from '@/pages/sales/CustomersPage';
+import { ProductsPage } from '@/pages/sales/ProductsPage';
+import { EstimatesPage } from '@/pages/sales/EstimatesPage';
+import { EstimateDetailPage } from '@/pages/sales/EstimateDetailPage';
+import { InvoicesPage } from '@/pages/sales/InvoicesPage';
+import { InvoiceDetailPage } from '@/pages/sales/InvoiceDetailPage';
+import { PaymentsPage } from '@/pages/sales/PaymentsPage';
+import { CreditMemosPage } from '@/pages/sales/CreditMemosPage';
+import { DepositsPage } from '@/pages/sales/DepositsPage';
+import { SalesReceiptsPage } from '@/pages/sales/SalesReceiptsPage';
 import { AccountsPage } from '@/pages/accounting/AccountsPage';
 import { AccountRegisterPage } from '@/pages/accounting/AccountRegisterPage';
 import { JournalsPage } from '@/pages/accounting/JournalsPage';
@@ -63,6 +73,16 @@ function Gate() {
     <AppShell me={me}>
       <Routes>
         <Route path="/" element={<DashboardPage me={me} />} />
+        <Route path="/sales/customers" element={<CustomersPage me={me} />} />
+        <Route path="/sales/products" element={<ProductsPage me={me} />} />
+        <Route path="/sales/estimates" element={<EstimatesPage me={me} />} />
+        <Route path="/sales/estimates/:id" element={<EstimateDetailPage me={me} />} />
+        <Route path="/sales/invoices" element={<InvoicesPage me={me} />} />
+        <Route path="/sales/invoices/:id" element={<InvoiceDetailPage me={me} />} />
+        <Route path="/sales/payments" element={<PaymentsPage me={me} />} />
+        <Route path="/sales/credits" element={<CreditMemosPage me={me} />} />
+        <Route path="/sales/deposits" element={<DepositsPage me={me} />} />
+        <Route path="/sales/receipts" element={<SalesReceiptsPage me={me} />} />
         <Route path="/accounting/accounts" element={<AccountsPage me={me} />} />
         <Route path="/accounting/accounts/:id/register" element={<AccountRegisterPage me={me} />} />
         <Route path="/accounting/journals" element={<JournalsPage me={me} />} />

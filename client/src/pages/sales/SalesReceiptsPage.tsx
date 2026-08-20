@@ -1,8 +1,7 @@
-import { useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -22,27 +21,20 @@ import {
 import { Table, TBody, TD, TDMoney, TFoot, TH, THead, TR } from '@/components/ui/table';
 
 type PostingStatus = 'draft' | 'posted' | 'voided' | 'reversed';
-type SettlementStatus = null | 'open' | 'partially_paid' | 'paid';
 
-interface InvoiceListItem {
+interface SalesReceiptListItem {
   id: string;
   number: string;
-  customerId: string;
-  customerName: string;
+  customerId: string | null;
+  customerName: string | null;
   postingStatus: PostingStatus;
-  invoiceDate: string;
-  dueDate: string | null;
-  subtotal: string;
-  taxTotal: string;
+  receiptDate: string;
   total: string;
-  openBalance: string;
-  settlementStatus: SettlementStatus;
 }
 
 interface Customer {
   id: string;
   displayName: string;
-  termsDays: number | null;
   active: boolean;
 }
 
@@ -65,6 +57,22 @@ interface TaxRate {
   rate: string;
   active: boolean;
 }
+
+interface Account {
+  id: string;
+  number: string | null;
+  name: string;
+  systemKey: string | null;
+  bankKind: string | null;
+  active: boolean;
+}
+
+const STATUS_TONES: Record<PostingStatus, 'neutral' | 'success' | 'warning' | 'danger'> = {
+  draft: 'neutral',
+  posted: 'success',
+  voided: 'danger',
+  reversed: 'warning',
+};
 
 // ---------------------------------------------------------------------------
 // Exact decimal string math (BigInt; floats are never involved).
@@ -123,67 +131,23 @@ function taxCentsFromFraction(taxableCents: bigint, fraction: string): bigint {
 
 const PRICE_PATTERN = /^\d*(\.\d{0,2})?$/;
 const QTY_PATTERN = /^\d*(\.\d{0,4})?$/;
-const TERMS_PATTERN = /^\d+$/;
 
-/** 'YYYY-MM-DD' + N days, computed in UTC so DST never shifts the date. */
-function addDaysISO(iso: string, days: number): string {
-  const [y, m, d] = iso.split('-').map(Number);
-  if (!y || !m || !d || Number.isNaN(y + m + d)) return iso;
-  const dt = new Date(Date.UTC(y, m - 1, d + days));
-  const yy = dt.getUTCFullYear();
-  const mm = String(dt.getUTCMonth() + 1).padStart(2, '0');
-  const dd = String(dt.getUTCDate()).padStart(2, '0');
-  return `${yy}-${mm}-${dd}`;
-}
-
-// ---------------------------------------------------------------------------
-// Status presentation
-// ---------------------------------------------------------------------------
-
-type StatusTab = 'all' | 'draft' | 'open' | 'paid' | 'voided';
-
-const STATUS_TABS: { key: StatusTab; label: string }[] = [
-  { key: 'all', label: 'All' },
-  { key: 'draft', label: 'Draft' },
-  { key: 'open', label: 'Open' },
-  { key: 'paid', label: 'Paid' },
-  { key: 'voided', label: 'Voided' },
-];
-
-function matchesTab(inv: InvoiceListItem, tab: StatusTab): boolean {
-  switch (tab) {
-    case 'all':
-      return true;
-    case 'draft':
-      return inv.postingStatus === 'draft';
-    case 'open':
-      return inv.postingStatus === 'posted' && inv.settlementStatus !== 'paid';
-    case 'paid':
-      return inv.postingStatus === 'posted' && inv.settlementStatus === 'paid';
-    case 'voided':
-      return inv.postingStatus === 'voided' || inv.postingStatus === 'reversed';
-  }
-}
-
-function statusBadge(inv: InvoiceListItem): {
-  label: string;
-  tone: 'neutral' | 'success' | 'warning' | 'danger' | 'info';
-} {
-  if (inv.postingStatus === 'draft') return { label: 'Draft', tone: 'neutral' };
-  if (inv.postingStatus === 'voided') return { label: 'Voided', tone: 'danger' };
-  if (inv.postingStatus === 'reversed') return { label: 'Reversed', tone: 'danger' };
-  if (inv.settlementStatus === 'paid') return { label: 'Paid', tone: 'success' };
-  if (inv.settlementStatus === 'partially_paid')
-    return { label: 'Partially paid', tone: 'warning' };
-  return { label: 'Open', tone: 'info' };
-}
-
-function isOverdue(inv: InvoiceListItem, today: string): boolean {
+/** Renders ApiError code + message verbatim so server error codes stay visible. */
+function ApiErrorNote({ error }: { error: unknown }) {
+  if (!error) return null;
+  const message =
+    error instanceof ApiError
+      ? `${error.code}: ${error.message}`
+      : error instanceof Error
+        ? error.message
+        : 'Something went wrong';
   return (
-    inv.postingStatus === 'posted' &&
-    toCents(inv.openBalance) > 0n &&
-    inv.dueDate !== null &&
-    inv.dueDate < today
+    <div
+      role="alert"
+      className="rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-sm text-destructive"
+    >
+      {message}
+    </div>
   );
 }
 
@@ -220,37 +184,24 @@ function lineIsComplete(l: FormLine): boolean {
   );
 }
 
-export function InvoicesPage({ me }: { me: Me }) {
+export function SalesReceiptsPage({ me }: { me: Me }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const { toast } = useToast();
   const currency = me.company?.homeCurrency ?? 'USD';
-  const canCreate = can(me, 'invoices.create');
-  const today = todayISO();
+  const canCreate = can(me, 'sales_receipts.create');
 
-  const [searchParams, setSearchParams] = useSearchParams();
-  const customerIdFilter = searchParams.get('customerId');
-
-  const [statusTab, setStatusTab] = useState<StatusTab>('all');
-
-  // ----- new invoice dialog state -----
+  // ----- new sales receipt dialog state -----
   const [formOpen, setFormOpen] = useState(false);
   const [customerId, setCustomerId] = useState('');
-  const [invoiceDate, setInvoiceDate] = useState(todayISO());
-  const [termsDays, setTermsDays] = useState('30');
+  const [receiptDate, setReceiptDate] = useState(todayISO());
+  const [depositToAccountId, setDepositToAccountId] = useState('');
   const [taxRateId, setTaxRateId] = useState('');
-  const [customerMessage, setCustomerMessage] = useState('');
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<FormLine[]>([emptyLine()]);
 
-  const invoices = useQuery({
-    queryKey: ['invoices', { customerId: customerIdFilter }],
-    queryFn: () =>
-      api.get<{ items: InvoiceListItem[] }>(
-        `/api/v1/invoices${
-          customerIdFilter ? `?customerId=${encodeURIComponent(customerIdFilter)}` : ''
-        }`,
-      ),
+  const salesReceipts = useQuery({
+    queryKey: ['sales-receipts'],
+    queryFn: () => api.get<{ items: SalesReceiptListItem[] }>('/api/v1/sales-receipts'),
   });
   const customers = useQuery({
     queryKey: ['customers'],
@@ -267,13 +218,21 @@ export function InvoicesPage({ me }: { me: Me }) {
     queryFn: () => api.get<{ items: TaxRate[] }>('/api/v1/tax-rates'),
     enabled: canCreate,
   });
+  const accounts = useQuery({
+    queryKey: ['accounts', 'for-sales-receipts'],
+    queryFn: () => api.get<{ items: Account[] }>('/api/v1/accounts?withBalances=true'),
+    enabled: canCreate,
+  });
 
   const customerOptions = (customers.data?.items ?? []).filter((c) => c.active);
   const productOptions = (products.data?.items ?? []).filter((p) => p.active);
   const taxRateOptions = (taxRates.data?.items ?? []).filter((t) => t.active);
   const selectedTaxRate = taxRateOptions.find((t) => t.id === taxRateId) ?? null;
+  const depositToOptions = (accounts.data?.items ?? []).filter(
+    (a) => a.active && (a.bankKind === 'bank' || a.systemKey === 'undeposited_funds'),
+  );
 
-  // ----- totals (exact decimal string math) -----
+  // ----- form totals (exact decimal string math) -----
   const subtotalCents = lines.reduce(
     (sum, l) => sum + (lineIsComplete(l) ? lineAmountCents(l.quantity, l.unitPrice) : 0n),
     0n,
@@ -286,20 +245,15 @@ export function InvoicesPage({ me }: { me: Me }) {
   const taxCents = selectedTaxRate ? taxCentsFromFraction(taxableCents, selectedTaxRate.rate) : 0n;
   const totalCents = subtotalCents + taxCents;
 
-  const termsValid = TERMS_PATTERN.test(termsDays.trim());
-  const dueDatePreview =
-    invoiceDate !== '' && termsValid ? addDaysISO(invoiceDate, Number(termsDays.trim())) : null;
-
   const allLinesComplete = lines.every(lineIsComplete);
   const canSave =
-    customerId !== '' && invoiceDate !== '' && termsValid && lines.length >= 1 && allLinesComplete;
+    receiptDate !== '' && depositToAccountId !== '' && lines.length >= 1 && allLinesComplete;
 
   function resetForm() {
     setCustomerId('');
-    setInvoiceDate(todayISO());
-    setTermsDays('30');
+    setReceiptDate(todayISO());
+    setDepositToAccountId('');
     setTaxRateId('');
-    setCustomerMessage('');
     setMemo('');
     setLines([emptyLine()]);
   }
@@ -326,22 +280,13 @@ export function InvoicesPage({ me }: { me: Me }) {
     });
   }
 
-  function selectCustomer(nextId: string) {
-    setCustomerId(nextId);
-    const c = customerOptions.find((x) => x.id === nextId);
-    if (c && c.termsDays !== null && c.termsDays !== undefined) {
-      setTermsDays(String(c.termsDays));
-    }
-  }
-
-  const createInvoice = useMutation({
+  const createSalesReceipt = useMutation({
     mutationFn: () => {
       const payload: {
-        customerId: string;
-        invoiceDate: string;
-        termsDays?: number;
+        customerId?: string;
+        receiptDate: string;
+        depositToAccountId: string;
         memo?: string;
-        customerMessage?: string;
         taxRateId?: string;
         lines: {
           productId?: string;
@@ -350,10 +295,10 @@ export function InvoicesPage({ me }: { me: Me }) {
           unitPrice: string;
           taxable?: boolean;
         }[];
+        idempotencyKey: string;
       } = {
-        customerId,
-        invoiceDate,
-        termsDays: Number(termsDays.trim()),
+        receiptDate,
+        depositToAccountId,
         lines: lines.map((l) => ({
           productId: l.productId !== '' ? l.productId : undefined,
           description: l.description.trim() !== '' ? l.description.trim() : undefined,
@@ -361,107 +306,62 @@ export function InvoicesPage({ me }: { me: Me }) {
           unitPrice: centsToDecimalString(toCents(l.unitPrice)),
           taxable: l.taxable,
         })),
+        idempotencyKey: crypto.randomUUID(),
       };
+      if (customerId !== '') payload.customerId = customerId;
       if (memo.trim() !== '') payload.memo = memo.trim();
-      if (customerMessage.trim() !== '') payload.customerMessage = customerMessage.trim();
       if (taxRateId !== '') payload.taxRateId = taxRateId;
-      return api.post<{ id: string; number: string }>('/api/v1/invoices', payload);
+      return api.post<{ id: string; number: string }>('/api/v1/sales-receipts', payload);
     },
     onSuccess: (data) => {
-      toast('success', `Invoice ${data.number} created`);
-      void qc.invalidateQueries({ queryKey: ['invoices'] });
+      toast('success', `Sales receipt ${data.number} recorded`);
+      void qc.invalidateQueries({ queryKey: ['sales-receipts'] });
+      void qc.invalidateQueries({ queryKey: ['undeposited-receipts'] });
+      void qc.invalidateQueries({ queryKey: ['accounts'] });
       setFormOpen(false);
       resetForm();
-      navigate(`/sales/invoices/${data.id}`);
     },
   });
 
-  const filtered = useMemo(
-    () => (invoices.data?.items ?? []).filter((i) => matchesTab(i, statusTab)),
-    [invoices.data, statusTab],
-  );
+  if (salesReceipts.isLoading) return <Spinner label="Loading sales receipts" />;
+  if (salesReceipts.error) return <ErrorNote error={salesReceipts.error} />;
 
-  const filteredTotalCents = filtered.reduce((sum, i) => sum + toCents(i.total), 0n);
-  const filteredOpenCents = filtered.reduce((sum, i) => sum + toCents(i.openBalance), 0n);
-
-  const filterCustomerName = customerIdFilter
-    ? (invoices.data?.items[0]?.customerName ??
-      (customers.data?.items ?? []).find((c) => c.id === customerIdFilter)?.displayName ??
-      null)
-    : null;
-
-  if (invoices.isLoading) return <Spinner label="Loading invoices" />;
-  if (invoices.error) return <ErrorNote error={invoices.error} />;
+  const items = salesReceipts.data?.items ?? [];
 
   return (
     <div>
       <PageHeader
-        title="Invoices"
-        description="Bill customers on account. Posting an invoice records receivables in the ledger; drafts stay off the books."
+        title="Sales receipts"
+        description="Point-of-sale style transactions: the sale and its payment are recorded together, with no receivable created."
         actions={
           canCreate ? (
             <Button
               onClick={() => {
-                createInvoice.reset();
+                createSalesReceipt.reset();
                 resetForm();
-                if (customerIdFilter) setCustomerId(customerIdFilter);
                 setFormOpen(true);
               }}
             >
-              New invoice
+              New sales receipt
             </Button>
           ) : undefined
         }
       />
 
-      {customerIdFilter ? (
-        <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">
-          <span>
-            Showing invoices for{' '}
-            <span className="font-medium">{filterCustomerName ?? 'the selected customer'}</span>.
-          </span>
-          <Button variant="ghost" size="sm" onClick={() => setSearchParams({})}>
-            Clear filter
-          </Button>
-        </div>
-      ) : null}
-
-      <div
-        className="mb-4 flex flex-wrap items-center gap-1"
-        role="group"
-        aria-label="Filter by status"
-      >
-        {STATUS_TABS.map((t) => (
-          <Button
-            key={t.key}
-            variant={statusTab === t.key ? 'secondary' : 'ghost'}
-            size="sm"
-            onClick={() => setStatusTab(t.key)}
-          >
-            {t.label}
-          </Button>
-        ))}
-      </div>
-
-      {filtered.length === 0 ? (
+      {items.length === 0 ? (
         <EmptyState
-          title={statusTab === 'all' ? 'No invoices yet' : 'No invoices with this status'}
-          description={
-            statusTab === 'all'
-              ? 'Create an invoice to bill a customer on account.'
-              : 'Try another status filter.'
-          }
+          title="No sales receipts yet"
+          description="Record a sales receipt when a customer pays at the time of sale."
           action={
-            canCreate && statusTab === 'all' ? (
+            canCreate ? (
               <Button
                 onClick={() => {
-                  createInvoice.reset();
+                  createSalesReceipt.reset();
                   resetForm();
-                  if (customerIdFilter) setCustomerId(customerIdFilter);
                   setFormOpen(true);
                 }}
               >
-                New invoice
+                New sales receipt
               </Button>
             ) : undefined
           }
@@ -472,94 +372,54 @@ export function InvoicesPage({ me }: { me: Me }) {
             <TR>
               <TH>Number</TH>
               <TH>Customer</TH>
-              <TH>Invoice date</TH>
-              <TH>Due date</TH>
-              <TH>Status</TH>
+              <TH>Date</TH>
               <TH className="text-right">Total</TH>
-              <TH className="text-right">Open balance</TH>
+              <TH>Status</TH>
             </TR>
           </THead>
           <TBody>
-            {filtered.map((inv) => {
-              const badge = statusBadge(inv);
-              return (
-                <TR
-                  key={inv.id}
-                  className="cursor-pointer"
-                  onClick={() => navigate(`/sales/invoices/${inv.id}`)}
-                >
-                  <TD>
-                    <button
-                      type="button"
-                      className="text-left font-mono text-[13px] font-medium hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                      onClick={(ev) => {
-                        ev.stopPropagation();
-                        navigate(`/sales/invoices/${inv.id}`);
-                      }}
-                    >
-                      {inv.number}
-                    </button>
-                  </TD>
-                  <TD>{inv.customerName}</TD>
-                  <TD className="text-muted-foreground">{formatDate(inv.invoiceDate)}</TD>
-                  <TD className="text-muted-foreground">{formatDate(inv.dueDate)}</TD>
-                  <TD>
-                    <span className="flex flex-wrap gap-1">
-                      <Badge tone={badge.tone}>{badge.label}</Badge>
-                      {isOverdue(inv, today) ? <Badge tone="danger">Overdue</Badge> : null}
-                    </span>
-                  </TD>
-                  <TDMoney>{formatMoney(inv.total, currency)}</TDMoney>
-                  <TDMoney>{formatMoney(inv.openBalance, currency)}</TDMoney>
-                </TR>
-              );
-            })}
+            {items.map((sr) => (
+              <TR key={sr.id}>
+                <TD className="font-mono text-[13px] font-medium">{sr.number}</TD>
+                <TD>{sr.customerName ?? 'Walk-in'}</TD>
+                <TD className="text-muted-foreground">{formatDate(sr.receiptDate)}</TD>
+                <TDMoney>{formatMoney(sr.total, currency)}</TDMoney>
+                <TD>
+                  <Badge tone={STATUS_TONES[sr.postingStatus]}>{sr.postingStatus}</Badge>
+                </TD>
+              </TR>
+            ))}
           </TBody>
-          <TFoot>
-            <TR>
-              <TD
-                colSpan={5}
-                className="text-right text-xs uppercase tracking-wide text-muted-foreground"
-              >
-                Totals ({filtered.length} {filtered.length === 1 ? 'invoice' : 'invoices'})
-              </TD>
-              <TDMoney>{formatMoney(centsToDecimalString(filteredTotalCents), currency)}</TDMoney>
-              <TDMoney>{formatMoney(centsToDecimalString(filteredOpenCents), currency)}</TDMoney>
-            </TR>
-          </TFoot>
         </Table>
       )}
 
-      {/* ----- new invoice dialog ----- */}
+      {/* ----- new sales receipt dialog ----- */}
       <Dialog
         open={formOpen}
         onOpenChange={(open) => {
           setFormOpen(open);
           if (!open) resetForm();
         }}
-        title="New invoice"
-        description="Saved as a draft; nothing posts to the ledger until the invoice is posted."
+        title="New sales receipt"
+        description="A sales receipt records the sale and the money in one step."
         wide
       >
         <form
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            createInvoice.mutate();
+            createSalesReceipt.mutate();
           }}
         >
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
-              <Label htmlFor="inv-customer">Customer</Label>
+              <Label htmlFor="sr-customer">Customer (optional)</Label>
               <Select
-                id="inv-customer"
-                required
+                id="sr-customer"
                 value={customerId}
-                onChange={(e) => selectCustomer(e.target.value)}
+                onChange={(e) => setCustomerId(e.target.value)}
               >
-                <option value="" disabled>
-                  Select a customer…
-                </option>
+                <option value="">Walk-in customer</option>
                 {customerOptions.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.displayName}
@@ -568,33 +428,47 @@ export function InvoicesPage({ me }: { me: Me }) {
               </Select>
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inv-date">Invoice date</Label>
+              <Label htmlFor="sr-date">Receipt date</Label>
               <Input
-                id="inv-date"
+                id="sr-date"
                 type="date"
                 required
-                value={invoiceDate}
-                onChange={(e) => setInvoiceDate(e.target.value)}
+                value={receiptDate}
+                onChange={(e) => setReceiptDate(e.target.value)}
               />
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="inv-terms">Terms (days)</Label>
-              <Input
-                id="inv-terms"
-                inputMode="numeric"
+              <Label htmlFor="sr-deposit-to">Deposit to</Label>
+              <Select
+                id="sr-deposit-to"
                 required
-                value={termsDays}
-                onChange={(e) => {
-                  if (e.target.value === '' || TERMS_PATTERN.test(e.target.value)) {
-                    setTermsDays(e.target.value);
-                  }
-                }}
-              />
-              <p className="text-xs text-muted-foreground">
-                {dueDatePreview
-                  ? `Due date: ${formatDate(dueDatePreview)}`
-                  : 'Enter a whole number of days.'}
-              </p>
+                value={depositToAccountId}
+                onChange={(e) => setDepositToAccountId(e.target.value)}
+              >
+                <option value="" disabled>
+                  Select an account…
+                </option>
+                {depositToOptions.map((a) => (
+                  <option key={a.id} value={a.id}>
+                    {a.number ? `${a.number} · ${a.name}` : a.name}
+                  </option>
+                ))}
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="sr-tax-rate">Tax rate (optional)</Label>
+              <Select
+                id="sr-tax-rate"
+                value={taxRateId}
+                onChange={(e) => setTaxRateId(e.target.value)}
+              >
+                <option value="">No tax</option>
+                {taxRateOptions.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </Select>
             </div>
           </div>
 
@@ -733,52 +607,32 @@ export function InvoicesPage({ me }: { me: Me }) {
             </TFoot>
           </Table>
 
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex items-start justify-between gap-3">
             <Button variant="outline" onClick={() => setLines((prev) => [...prev, emptyLine()])}>
               Add line
             </Button>
-            <div className="w-56 space-y-1.5">
-              <Label htmlFor="inv-tax-rate">Tax rate (optional)</Label>
-              <Select
-                id="inv-tax-rate"
-                value={taxRateId}
-                onChange={(e) => setTaxRateId(e.target.value)}
-              >
-                <option value="">No tax</option>
-                {taxRateOptions.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="space-y-1.5">
-              <Label htmlFor="inv-message">Customer message (optional)</Label>
+            <div className="w-72 space-y-1.5">
+              <Label htmlFor="sr-memo">Memo (optional)</Label>
               <Textarea
-                id="inv-message"
-                value={customerMessage}
-                onChange={(e) => setCustomerMessage(e.target.value)}
+                id="sr-memo"
+                className="min-h-[36px]"
+                rows={1}
+                value={memo}
+                onChange={(e) => setMemo(e.target.value)}
               />
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="inv-memo">Memo (optional)</Label>
-              <Textarea id="inv-memo" value={memo} onChange={(e) => setMemo(e.target.value)} />
-            </div>
           </div>
 
-          {createInvoice.error ? <ErrorNote error={createInvoice.error} /> : null}
+          {createSalesReceipt.error ? <ApiErrorNote error={createSalesReceipt.error} /> : null}
 
           <div className="flex items-center justify-between gap-3">
             <p className="text-xs text-muted-foreground">
               {!canSave
-                ? 'A customer, a date, terms, and at least one line with a quantity and unit price are required.'
-                : 'Ready to save.'}
+                ? 'A date, a deposit-to account, and at least one line with a quantity and unit price are required.'
+                : 'Recording posts the receipt immediately.'}
             </p>
-            <Button type="submit" disabled={!canSave} loading={createInvoice.isPending}>
-              Create invoice
+            <Button type="submit" disabled={!canSave} loading={createSalesReceipt.isPending}>
+              Record sales receipt
             </Button>
           </div>
         </form>

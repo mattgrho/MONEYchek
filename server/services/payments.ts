@@ -10,7 +10,6 @@ import {
   depositComponents,
   deposits,
   invoices,
-  salesReceipts,
 } from '../db/schema/index';
 import { AppError } from '../lib/errors';
 import { runFinancialCommand } from '../accounting/idempotency';

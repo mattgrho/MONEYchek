@@ -327,11 +327,10 @@ export function EstimatesPage({ me }: { me: Me }) {
     },
   });
 
-  const items = estimates.data?.items ?? [];
-  const filtered = useMemo(
-    () => (statusFilter === 'all' ? items : items.filter((e) => e.status === statusFilter)),
-    [items, statusFilter],
-  );
+  const filtered = useMemo(() => {
+    const items = estimates.data?.items ?? [];
+    return statusFilter === 'all' ? items : items.filter((e) => e.status === statusFilter);
+  }, [estimates.data, statusFilter]);
 
   if (estimates.isLoading) return <Spinner label="Loading estimates" />;
   if (estimates.error) return <ErrorNote error={estimates.error} />;

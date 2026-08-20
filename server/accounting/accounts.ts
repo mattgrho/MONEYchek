@@ -3,6 +3,7 @@ import type { DbOrTx, Tx } from '../db/client';
 import {
   accountingSettings,
   accounts,
+  financialAccountMetadata,
   journalLines,
   type AccountCategory,
 } from '../db/schema/index';
@@ -436,7 +437,7 @@ export async function applyChartTemplate(
   }
   await ensureSystemAccounts(tx, organizationId);
   for (const acc of template.accounts) {
-    await tx
+    const inserted = await tx
       .insert(accounts)
       .values({
         organizationId,
@@ -448,7 +449,17 @@ export async function applyChartTemplate(
         postable: true,
         active: true,
       })
-      .onConflictDoNothing();
+      .onConflictDoNothing()
+      .returning({ id: accounts.id });
+    // Bank/credit-card accounts carry register metadata (registers,
+    // statement import, reconciliation all key off it).
+    if (inserted[0] && (acc.detailType === 'bank' || acc.detailType === 'credit_card')) {
+      await tx.insert(financialAccountMetadata).values({
+        organizationId,
+        accountId: inserted[0].id,
+        kind: acc.detailType === 'bank' ? 'bank' : 'credit_card',
+      });
+    }
   }
   // Wire sensible defaults for income/expense mapping.
   const [income] = await tx

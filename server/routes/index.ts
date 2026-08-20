@@ -9,6 +9,7 @@ import { onboardingRouter } from './onboarding';
 import { salesRouter } from './sales';
 import { arRouter } from './ar';
 import { apRouter } from './ap';
+import { bankingRouter } from './banking';
 
 /**
  * /api/v1 composition. Every router below attachAuth sees req.identity /
@@ -26,5 +27,6 @@ export function buildApiRouter(): Router {
   api.use(requireAuth, requireMember, salesRouter);
   api.use(requireAuth, requireMember, arRouter);
   api.use(requireAuth, requireMember, apRouter);
+  api.use(requireAuth, requireMember, bankingRouter);
   return api;
 }

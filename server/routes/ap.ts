@@ -10,8 +10,6 @@ import {
   companyProfiles,
   expenseLines,
   expenses,
-  vendorCreditLines,
-  vendorCredits,
   vendors,
 } from '../db/schema/index';
 import { orgCtx, requirePermission } from '../middleware/auth';
