@@ -3,6 +3,8 @@ import { attachAuth, requireAuth, requireMember } from '../middleware/auth';
 import { sessionRouter } from './session';
 import { usersRouter } from './users';
 import { dashboardRouter } from './dashboard';
+import { accountingRouter } from './accounting';
+import { reportsRouter } from './reports';
 
 /**
  * /api/v1 composition. Every router below attachAuth sees req.identity /
@@ -14,5 +16,7 @@ export function buildApiRouter(): Router {
   api.use(sessionRouter);
   api.use(requireAuth, requireMember, usersRouter);
   api.use(requireAuth, requireMember, dashboardRouter);
+  api.use(requireAuth, requireMember, accountingRouter);
+  api.use(requireAuth, requireMember, reportsRouter);
   return api;
 }
