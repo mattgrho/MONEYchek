@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, asc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import {
   customers,
@@ -12,6 +12,7 @@ import {
 import { orgCtx, requirePermission } from '../middleware/auth';
 import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/validate';
 import { AppError } from '../lib/errors';
+import { PageQuery, decodeCursor, pageResult } from '../lib/pagination';
 import {
   convertEstimateToInvoice,
   createEstimateDraft,
@@ -55,7 +56,8 @@ salesRouter.get(
       .select()
       .from(customers)
       .where(eq(customers.organizationId, ctx.organizationId))
-      .orderBy(asc(customers.displayName));
+      .orderBy(asc(customers.displayName))
+      .limit(5000);
     res.json({ items: rows.filter((r) => query.includeInactive || r.active) });
   }),
 );
@@ -124,7 +126,8 @@ salesRouter.get(
       .select()
       .from(productsServices)
       .where(eq(productsServices.organizationId, ctx.organizationId))
-      .orderBy(asc(productsServices.name));
+      .orderBy(asc(productsServices.name))
+      .limit(5000);
     res.json({ items: rows.filter((r) => query.includeInactive || r.active) });
   }),
 );
@@ -187,7 +190,8 @@ salesRouter.get(
       .select()
       .from(taxRates)
       .where(eq(taxRates.organizationId, ctx.organizationId))
-      .orderBy(asc(taxRates.name));
+      .orderBy(asc(taxRates.name))
+      .limit(1000);
     res.json({ items: rows });
   }),
 );
@@ -247,6 +251,14 @@ salesRouter.get(
   requirePermission('estimates.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
+    const conditions = [eq(estimates.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${estimates.estimateDate}, ${estimates.number}) < (${after[0]}::date, ${after[1]})`,
+      );
+    }
     const rows = await getDb()
       .select({
         id: estimates.id,
@@ -260,9 +272,11 @@ salesRouter.get(
       })
       .from(estimates)
       .innerJoin(customers, eq(estimates.customerId, customers.id))
-      .where(eq(estimates.organizationId, ctx.organizationId))
-      .orderBy(asc(estimates.number));
-    res.json({ items: rows });
+      .where(and(...conditions))
+      .orderBy(desc(estimates.estimateDate), desc(estimates.number))
+      .limit(query.limit + 1);
+    const page = pageResult(rows, query.limit, (r) => [r.estimateDate, r.number]);
+    res.json({ items: page.items, nextCursor: page.nextCursor });
   }),
 );
 

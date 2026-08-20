@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { api, apiUpload } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
@@ -45,11 +46,10 @@ export function DocumentsPage({ me }: { me: Me }) {
   const fileRef = useRef<HTMLInputElement>(null);
   const [kind, setKind] = useState('document');
 
-  const attachments = useQuery({
-    queryKey: ['attachments'],
-    queryFn: () =>
-      api.get<{ storageAvailable: boolean; items: Attachment[] }>('/api/v1/attachments'),
-  });
+  const attachments = usePagedList<Attachment, { storageAvailable: boolean }>(
+    ['attachments'],
+    '/api/v1/attachments',
+  );
 
   const upload = useMutation({
     mutationFn: async () => {
@@ -78,7 +78,8 @@ export function DocumentsPage({ me }: { me: Me }) {
   });
 
   if (attachments.isLoading) return <Spinner label="Loading documents" />;
-  const data = attachments.data;
+  const data = attachments.firstPage;
+  const items = attachments.items;
 
   return (
     <div>
@@ -155,7 +156,7 @@ export function DocumentsPage({ me }: { me: Me }) {
         </Card>
       ) : null}
 
-      {data && data.items.length === 0 ? (
+      {data && items.length === 0 ? (
         <EmptyState
           title="No documents yet"
           description="Uploaded receipts and statements appear here and can be linked to transactions."
@@ -173,7 +174,7 @@ export function DocumentsPage({ me }: { me: Me }) {
             </TR>
           </THead>
           <TBody>
-            {data.items.map((a) => (
+            {items.map((a) => (
               <TR key={a.id}>
                 <TD className="font-medium">{a.originalFilename}</TD>
                 <TD>
@@ -210,6 +211,11 @@ export function DocumentsPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       ) : null}
+      <LoadMoreButton
+        hasMore={attachments.hasMore}
+        loading={attachments.isLoadingMore}
+        onClick={attachments.loadMore}
+      />
     </div>
   );
 }

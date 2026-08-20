@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -218,10 +219,7 @@ export function BillsPage({ me }: { me: Me }) {
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<FormLine[]>([emptyLine()]);
 
-  const bills = useQuery({
-    queryKey: ['bills'],
-    queryFn: () => api.get<{ items: BillListItem[] }>('/api/v1/bills'),
-  });
+  const bills = usePagedList<BillListItem>(['bills'], '/api/v1/bills');
   const vendors = useQuery({
     queryKey: ['vendors'],
     queryFn: () => api.get<{ items: Vendor[] }>('/api/v1/vendors'),
@@ -327,9 +325,10 @@ export function BillsPage({ me }: { me: Me }) {
     },
   });
 
+  const billItems = bills.items;
   const filtered = useMemo(
-    () => (bills.data?.items ?? []).filter((b) => matchesTab(b, statusTab)),
-    [bills.data, statusTab],
+    () => billItems.filter((b) => matchesTab(b, statusTab)),
+    [billItems, statusTab],
   );
 
   const filteredTotalCents = filtered.reduce((sum, b) => sum + toCents(b.total), 0n);
@@ -464,6 +463,11 @@ export function BillsPage({ me }: { me: Me }) {
           </TFoot>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={bills.hasMore}
+        loading={bills.isLoadingMore}
+        onClick={bills.loadMore}
+      />
 
       {/* ----- new bill dialog ----- */}
       <Dialog

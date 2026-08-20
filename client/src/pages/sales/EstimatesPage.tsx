@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -212,10 +213,7 @@ export function EstimatesPage({ me }: { me: Me }) {
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<FormLine[]>([emptyLine()]);
 
-  const estimates = useQuery({
-    queryKey: ['estimates'],
-    queryFn: () => api.get<{ items: EstimateListItem[] }>('/api/v1/estimates'),
-  });
+  const estimates = usePagedList<EstimateListItem>(['estimates'], '/api/v1/estimates');
   const customers = useQuery({
     queryKey: ['customers'],
     queryFn: () => api.get<{ items: Customer[] }>('/api/v1/customers'),
@@ -327,10 +325,14 @@ export function EstimatesPage({ me }: { me: Me }) {
     },
   });
 
-  const filtered = useMemo(() => {
-    const items = estimates.data?.items ?? [];
-    return statusFilter === 'all' ? items : items.filter((e) => e.status === statusFilter);
-  }, [estimates.data, statusFilter]);
+  const estimateItems = estimates.items;
+  const filtered = useMemo(
+    () =>
+      statusFilter === 'all'
+        ? estimateItems
+        : estimateItems.filter((e) => e.status === statusFilter),
+    [estimateItems, statusFilter],
+  );
 
   if (estimates.isLoading) return <Spinner label="Loading estimates" />;
   if (estimates.error) return <ErrorNote error={estimates.error} />;
@@ -444,6 +446,11 @@ export function EstimatesPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={estimates.hasMore}
+        loading={estimates.isLoadingMore}
+        onClick={estimates.loadMore}
+      />
 
       {/* ----- new estimate dialog ----- */}
       <Dialog

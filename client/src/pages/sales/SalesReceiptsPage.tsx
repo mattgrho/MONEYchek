@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -199,10 +200,10 @@ export function SalesReceiptsPage({ me }: { me: Me }) {
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<FormLine[]>([emptyLine()]);
 
-  const salesReceipts = useQuery({
-    queryKey: ['sales-receipts'],
-    queryFn: () => api.get<{ items: SalesReceiptListItem[] }>('/api/v1/sales-receipts'),
-  });
+  const salesReceipts = usePagedList<SalesReceiptListItem>(
+    ['sales-receipts'],
+    '/api/v1/sales-receipts',
+  );
   const customers = useQuery({
     queryKey: ['customers'],
     queryFn: () => api.get<{ items: Customer[] }>('/api/v1/customers'),
@@ -326,7 +327,7 @@ export function SalesReceiptsPage({ me }: { me: Me }) {
   if (salesReceipts.isLoading) return <Spinner label="Loading sales receipts" />;
   if (salesReceipts.error) return <ErrorNote error={salesReceipts.error} />;
 
-  const items = salesReceipts.data?.items ?? [];
+  const items = salesReceipts.items;
 
   return (
     <div>
@@ -392,6 +393,11 @@ export function SalesReceiptsPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={salesReceipts.hasMore}
+        loading={salesReceipts.isLoadingMore}
+        onClick={salesReceipts.loadMore}
+      />
 
       {/* ----- new sales receipt dialog ----- */}
       <Dialog

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -187,10 +188,7 @@ export function BillPaymentsPage({ me }: { me: Me }) {
   const [memo, setMemo] = useState('');
   const [allocs, setAllocs] = useState<Record<string, AllocRow>>({});
 
-  const payments = useQuery({
-    queryKey: ['bill-payments'],
-    queryFn: () => api.get<{ items: BillPaymentListItem[] }>('/api/v1/bill-payments'),
-  });
+  const payments = usePagedList<BillPaymentListItem>(['bill-payments'], '/api/v1/bill-payments');
   const apAging = useQuery({
     queryKey: ['ap-aging'],
     queryFn: () => api.get<ApAgingReport>('/api/v1/reports/ap-aging'),
@@ -312,7 +310,7 @@ export function BillPaymentsPage({ me }: { me: Me }) {
   if (payments.isLoading) return <Spinner label="Loading bill payments" />;
   if (payments.error) return <ErrorNote error={payments.error} />;
 
-  const items = payments.data?.items ?? [];
+  const items = payments.items;
   const aging = apAging.data;
 
   // Column sums for the aging footer (exact decimal string math).
@@ -528,6 +526,11 @@ export function BillPaymentsPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={payments.hasMore}
+        loading={payments.isLoadingMore}
+        onClick={payments.loadMore}
+      />
 
       {/* ----- pay bills dialog ----- */}
       <Dialog

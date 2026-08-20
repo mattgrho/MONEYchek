@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -206,10 +207,7 @@ export function ExpensesPage({ me }: { me: Me }) {
   const [voidTarget, setVoidTarget] = useState<ExpenseListItem | null>(null);
   const [voidReason, setVoidReason] = useState('');
 
-  const expensesQuery = useQuery({
-    queryKey: ['expenses'],
-    queryFn: () => api.get<{ items: ExpenseListItem[] }>('/api/v1/expenses'),
-  });
+  const expensesQuery = usePagedList<ExpenseListItem>(['expenses'], '/api/v1/expenses');
   const accounts = useQuery({
     queryKey: ['accounts', 'for-expenses'],
     queryFn: () => api.get<{ items: Account[] }>('/api/v1/accounts'),
@@ -339,7 +337,7 @@ export function ExpensesPage({ me }: { me: Me }) {
   if (expensesQuery.isLoading) return <Spinner label="Loading expenses" />;
   if (expensesQuery.error) return <ErrorNote error={expensesQuery.error} />;
 
-  const items = expensesQuery.data?.items ?? [];
+  const items = expensesQuery.items;
   const detail = expandedExpense.data;
 
   return (
@@ -512,6 +510,11 @@ export function ExpensesPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={expensesQuery.hasMore}
+        loading={expensesQuery.isLoadingMore}
+        onClick={expensesQuery.loadMore}
+      />
 
       {/* ----- new expense dialog ----- */}
       <Dialog

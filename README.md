@@ -113,6 +113,7 @@ adapter that refuses to load outside `NODE_ENV=test`.
 | `npm run db:migrate`                     | Apply migrations (advisory lock, migration ledger). `-- --test` targets TEST_DATABASE_URL with guards             |
 | `npm run db:generate`                    | Generate a migration from the Drizzle schema (review before committing)                                           |
 | `npm run db:seed:demo -- --confirm-demo` | Deterministic fictional demo company (guards below)                                                               |
+| `npm run perf:seed -- --confirm-perf`    | 10k-entry performance fixture + report timings + EXPLAIN review, TEST database only (docs/PERFORMANCE.md)         |
 | `npm test`                               | Unit + integration tests (needs TEST_DATABASE_URL)                                                                |
 | `npm run test:e2e`                       | Playwright + axe against the real production build                                                                |
 | `npm run verify`                         | format check, lint, strict typecheck, tests, build                                                                |
@@ -205,9 +206,10 @@ reversals, close/reopen, reconciliation, exports, and uploads.
   row is pending the gated tax module.
 - Terminology aliases, navigation reordering, and per-user dashboards are
   not yet configurable.
-- `/api/v1` responses use bounded queries (typically LIMIT 500) rather than
-  full cursor pagination; the 10k-transaction performance seed has not been
-  run yet.
+- Master-record lists (customers, vendors, products) are alphabetical with a
+  hard safety bound rather than paginated; transactional lists use keyset
+  cursor pagination with Load more (see docs/PERFORMANCE.md for the measured
+  10k-transaction results).
 - Email sending is not implemented (no provider assumed); "sent" states are
   never faked.
 - Moderate (not high/critical) advisory findings exist in production

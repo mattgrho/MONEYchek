@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -179,10 +180,7 @@ export function VendorCreditsPage({ me }: { me: Me }) {
   const [effectiveDate, setEffectiveDate] = useState(todayISO());
   const [applyRows, setApplyRows] = useState<Record<string, ApplyRow>>({});
 
-  const credits = useQuery({
-    queryKey: ['vendor-credits'],
-    queryFn: () => api.get<{ items: VendorCreditListItem[] }>('/api/v1/vendor-credits'),
-  });
+  const credits = usePagedList<VendorCreditListItem>(['vendor-credits'], '/api/v1/vendor-credits');
   const vendorsQuery = useQuery({
     queryKey: ['vendors'],
     queryFn: () => api.get<{ items: Vendor[] }>('/api/v1/vendors'),
@@ -356,7 +354,7 @@ export function VendorCreditsPage({ me }: { me: Me }) {
   if (credits.isLoading) return <Spinner label="Loading vendor credits" />;
   if (credits.error) return <ErrorNote error={credits.error} />;
 
-  const items = credits.data?.items ?? [];
+  const items = credits.items;
 
   return (
     <div>
@@ -464,6 +462,11 @@ export function VendorCreditsPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={credits.hasMore}
+        loading={credits.isLoadingMore}
+        onClick={credits.loadMore}
+      />
 
       {/* ----- new vendor credit dialog ----- */}
       <Dialog

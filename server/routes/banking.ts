@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import {
   accounts,
@@ -14,6 +14,7 @@ import { orgCtx, requirePermission } from '../middleware/auth';
 import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/validate';
 import { rateLimit } from '../middleware/rate-limit';
 import { AppError } from '../lib/errors';
+import { PageQuery, decodeCursor, pageResult } from '../lib/pagination';
 import {
   abandonReconciliation,
   addFromFeedItem,
@@ -167,7 +168,7 @@ bankingRouter.get(
     const ctx = orgCtx(req);
     const query = parseQuery(
       req,
-      z.object({
+      PageQuery.extend({
         accountId: z.string().uuid().optional(),
         state: z
           .enum([
@@ -183,27 +184,33 @@ bankingRouter.get(
           .optional(),
       }),
     );
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
     const conditions = [eq(bankFeedItems.organizationId, ctx.organizationId)];
     if (query.accountId) conditions.push(eq(bankFeedItems.accountId, query.accountId));
+    if (query.state === 'for_review') {
+      conditions.push(
+        inArray(bankFeedItems.state, ['new', 'suggested', 'possible_duplicate', 'needs_info']),
+      );
+    } else if (query.state) {
+      conditions.push(eq(bankFeedItems.state, query.state));
+    }
+    if (after) {
+      conditions.push(
+        sql`(${bankFeedItems.txnDate}, ${bankFeedItems.id}) < (${after[0]}::date, ${after[1]}::uuid)`,
+      );
+    }
     const rows = await db
       .select()
       .from(bankFeedItems)
       .where(and(...conditions))
-      .orderBy(desc(bankFeedItems.txnDate))
-      .limit(500);
+      .orderBy(desc(bankFeedItems.txnDate), desc(bankFeedItems.id))
+      .limit(query.limit + 1);
     const { roundMoney } = await import('@shared/money');
-    const forReview = ['new', 'suggested', 'possible_duplicate', 'needs_info'];
+    const page = pageResult(rows, query.limit, (r) => [r.txnDate, r.id]);
     res.json({
-      items: rows
-        .filter((r) =>
-          query.state === 'for_review'
-            ? forReview.includes(r.state)
-            : query.state
-              ? r.state === query.state
-              : true,
-        )
-        .map((r) => ({ ...r, amount: roundMoney(r.amount) })),
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({ ...r, amount: roundMoney(r.amount) })),
     });
   }),
 );

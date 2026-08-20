@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -226,10 +227,7 @@ export function CreditMemosPage({ me }: { me: Me }) {
   const [refundDate, setRefundDate] = useState(todayISO());
   const [refundBankAccountId, setRefundBankAccountId] = useState('');
 
-  const creditMemos = useQuery({
-    queryKey: ['credit-memos'],
-    queryFn: () => api.get<{ items: CreditMemoListItem[] }>('/api/v1/credit-memos'),
-  });
+  const creditMemos = usePagedList<CreditMemoListItem>(['credit-memos'], '/api/v1/credit-memos');
   const customers = useQuery({
     queryKey: ['customers'],
     queryFn: () => api.get<{ items: Customer[] }>('/api/v1/customers'),
@@ -431,7 +429,7 @@ export function CreditMemosPage({ me }: { me: Me }) {
   if (creditMemos.isLoading) return <Spinner label="Loading credit memos" />;
   if (creditMemos.error) return <ErrorNote error={creditMemos.error} />;
 
-  const items = creditMemos.data?.items ?? [];
+  const items = creditMemos.items;
   const refundAmountCents = PRICE_PATTERN.test(refundAmount.trim()) ? toCents(refundAmount) : 0n;
   const refundMaxCents = refundTarget ? toCents(refundTarget.unapplied) : 0n;
   const canRefund =
@@ -562,6 +560,11 @@ export function CreditMemosPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={creditMemos.hasMore}
+        loading={creditMemos.isLoadingMore}
+        onClick={creditMemos.loadMore}
+      />
 
       {/* ----- new credit memo dialog ----- */}
       <Dialog

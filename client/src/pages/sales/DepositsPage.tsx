@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight, Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -181,10 +182,7 @@ export function DepositsPage({ me }: { me: Me }) {
     queryKey: ['undeposited-receipts'],
     queryFn: () => api.get<{ items: UndepositedReceipt[] }>('/api/v1/undeposited-receipts'),
   });
-  const deposits = useQuery({
-    queryKey: ['deposits'],
-    queryFn: () => api.get<{ items: Deposit[] }>('/api/v1/deposits'),
-  });
+  const deposits = usePagedList<Deposit>(['deposits'], '/api/v1/deposits');
   const accounts = useQuery({
     queryKey: ['accounts', 'for-deposits'],
     queryFn: () => api.get<{ items: Account[] }>('/api/v1/accounts?withBalances=true'),
@@ -271,7 +269,7 @@ export function DepositsPage({ me }: { me: Me }) {
   if (deposits.error) return <ErrorNote error={deposits.error} />;
   if (accounts.error) return <ErrorNote error={accounts.error} />;
 
-  const depositItems = deposits.data?.items ?? [];
+  const depositItems = deposits.items;
 
   function bankAccountName(id: string): string {
     const a = accountById.get(id);
@@ -419,6 +417,11 @@ export function DepositsPage({ me }: { me: Me }) {
               </TBody>
             </Table>
           )}
+          <LoadMoreButton
+            hasMore={deposits.hasMore}
+            loading={deposits.isLoadingMore}
+            onClick={deposits.loadMore}
+          />
         </CardContent>
       </Card>
 

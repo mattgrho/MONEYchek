@@ -47,6 +47,34 @@ const STATUS_TONE: Record<PeriodStatus, 'success' | 'warning' | 'danger'> = {
   hard_closed: 'danger',
 };
 
+interface CloseCheckItem {
+  key: string;
+  label: string;
+  status: 'pass' | 'warning' | 'fail';
+  detail: string;
+  value?: string;
+}
+
+interface CloseChecklist {
+  throughDate: string;
+  ready: boolean;
+  items: CloseCheckItem[];
+}
+
+const CHECK_TONE: Record<CloseCheckItem['status'], 'success' | 'warning' | 'danger'> = {
+  pass: 'success',
+  warning: 'warning',
+  fail: 'danger',
+};
+
+const CHECK_LABEL: Record<CloseCheckItem['status'], string> = {
+  pass: 'Pass',
+  warning: 'Review',
+  fail: 'Fail',
+};
+
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
 export function PeriodsPage({ me }: { me: Me }) {
   const qc = useQueryClient();
   const { toast } = useToast();
@@ -63,6 +91,15 @@ export function PeriodsPage({ me }: { me: Me }) {
   const periods = useQuery({
     queryKey: ['periods'],
     queryFn: () => api.get<{ items: Period[] }>('/api/v1/periods'),
+  });
+
+  const checklist = useQuery({
+    queryKey: ['close-checklist', throughDate],
+    queryFn: () =>
+      api.get<CloseChecklist>(
+        `/api/v1/periods/close-checklist?through=${encodeURIComponent(throughDate)}`,
+      ),
+    enabled: can(me, 'periods.close') && DATE_RE.test(throughDate),
   });
 
   const closeBooks = useMutation({
@@ -180,6 +217,38 @@ export function PeriodsPage({ me }: { me: Me }) {
               Every period ending on or before the through date is closed. Periods that do not exist
               yet are created and closed in the same step.
             </p>
+
+            <div className="mt-5 border-t border-border pt-4">
+              <h3 className="text-sm font-semibold">Pre-close checklist</h3>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Computed live from the ledger for the through date above. Failures mean the books do
+                not tie and should be investigated before closing; review items are open work dated
+                in the range being closed.
+              </p>
+              {checklist.isLoading ? (
+                <div className="mt-3">
+                  <Spinner label="Running checklist" />
+                </div>
+              ) : checklist.error ? (
+                <div className="mt-3">
+                  <ErrorNote error={checklist.error} />
+                </div>
+              ) : checklist.data ? (
+                <ul className="mt-3 space-y-2">
+                  {checklist.data.items.map((item) => (
+                    <li key={item.key} className="flex items-start gap-2 text-sm">
+                      <Badge tone={CHECK_TONE[item.status]} className="mt-0.5 shrink-0">
+                        {CHECK_LABEL[item.status]}
+                      </Badge>
+                      <span>
+                        <span className="font-medium">{item.label}.</span>{' '}
+                        <span className="text-muted-foreground">{item.detail}</span>
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       ) : null}
@@ -268,6 +337,12 @@ export function PeriodsPage({ me }: { me: Me }) {
         }
       >
         <div className="space-y-4">
+          {checklist.data && !checklist.data.ready ? (
+            <p className="rounded-md border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
+              The pre-close checklist reports a tie-out failure for this date. Closing now locks
+              books that do not reconcile — investigate the failed checks first.
+            </p>
+          ) : null}
           {closeBooks.error ? <ErrorNote error={closeBooks.error} /> : null}
           <div className="flex justify-end gap-2">
             <Button

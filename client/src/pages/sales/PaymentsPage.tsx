@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ChevronDown, ChevronRight } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -184,10 +185,7 @@ export function PaymentsPage({ me }: { me: Me }) {
   const [refundDate, setRefundDate] = useState(todayISO());
   const [refundBankAccountId, setRefundBankAccountId] = useState('');
 
-  const payments = useQuery({
-    queryKey: ['payments'],
-    queryFn: () => api.get<{ items: PaymentListItem[] }>('/api/v1/payments'),
-  });
+  const payments = usePagedList<PaymentListItem>(['payments'], '/api/v1/payments');
   const customers = useQuery({
     queryKey: ['customers'],
     queryFn: () => api.get<{ items: Customer[] }>('/api/v1/customers'),
@@ -393,7 +391,7 @@ export function PaymentsPage({ me }: { me: Me }) {
   if (payments.isLoading) return <Spinner label="Loading payments" />;
   if (payments.error) return <ErrorNote error={payments.error} />;
 
-  const items = payments.data?.items ?? [];
+  const items = payments.items;
   const refundAmountCents = PRICE_PATTERN.test(refundAmount.trim()) ? toCents(refundAmount) : 0n;
   const refundMaxCents = refundTarget ? toCents(refundTarget.unapplied) : 0n;
   const canRefund =
@@ -632,6 +630,11 @@ export function PaymentsPage({ me }: { me: Me }) {
           </TBody>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={payments.hasMore}
+        loading={payments.isLoadingMore}
+        onClick={payments.loadMore}
+      />
 
       {/* ----- receive payment dialog ----- */}
       <Dialog

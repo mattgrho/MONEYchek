@@ -40,6 +40,11 @@ completed work.
       outputs, owner full export with manifest, attachments with validation,
       demo seed with guards, verify/verify:release pipelines, docs. Golden
       dataset (§30) passes end to end.
+- [x] Post-core hardening — keyset cursor pagination on every transactional
+      list (server + Load more UI), audit-log beforeSeq fix, close checklist
+      endpoint surfaced in the Periods page, 10k-entry performance seed with
+      EXPLAIN review and the resulting 0004_perf_indexes migration
+      (docs/PERFORMANCE.md).
 - [ ] Phases 8–10 — Gated extensions: NOT started (inventory UI, tax center,
       projects/time, POs, budgets/recurring, OFX/QFX, XLSX, cash-basis, SoCF,
       retainers, NSF flows, payroll import). Navigation for these does not exist.
@@ -83,14 +88,10 @@ in this build environment; see External prerequisites).
 
 ## Next actions (in order)
 
-1. Pagination/cursor support and the 10k-transaction performance seed with
-   EXPLAIN review of report/aging queries (§26).
-2. Close checklist endpoint (pre-close tie-out assertions surfaced in the
-   Periods page).
-3. Two-step approvals, purchase orders with conversion, customer retainers,
+1. Two-step approvals, purchase orders with conversion, customer retainers,
    NSF/returned-payment workflows (gated extensions A).
-4. Inventory UI gate (subledger already complete + tested).
-5. Manual sales-tax center (agencies/components/liability report) on the
+2. Inventory UI gate (subledger already complete + tested).
+3. Manual sales-tax center (agencies/components/liability report) on the
    existing tax_rates schema.
-6. Email outbox worker behind a real provider config; recurring templates
+4. Email outbox worker behind a real provider config; recurring templates
    via Scheduled Deployment.

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { useMutation, useQuery } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation } from '@tanstack/react-query';
 import { api } from '@/lib/api';
+import { LoadMoreButton } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { formatDate } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -29,9 +30,14 @@ interface VerifyResult {
 export function AuditLogPage({ me }: { me: Me }) {
   const [verifyResult, setVerifyResult] = useState<VerifyResult | null>(null);
 
-  const log = useQuery({
+  const log = useInfiniteQuery({
     queryKey: ['audit-log'],
-    queryFn: () => api.get<{ items: AuditEvent[] }>('/api/v1/audit-log?limit=100'),
+    initialPageParam: null as number | null,
+    queryFn: ({ pageParam }) =>
+      api.get<{ items: AuditEvent[]; nextBeforeSeq: number | null }>(
+        `/api/v1/audit-log?limit=100${pageParam ? `&beforeSeq=${pageParam}` : ''}`,
+      ),
+    getNextPageParam: (last) => last.nextBeforeSeq ?? undefined,
   });
 
   const verify = useMutation({
@@ -39,7 +45,7 @@ export function AuditLogPage({ me }: { me: Me }) {
     onSuccess: (data) => setVerifyResult(data),
   });
 
-  const items = log.data?.items ?? [];
+  const items = log.data?.pages.flatMap((p) => p.items) ?? [];
 
   return (
     <div>
@@ -133,6 +139,11 @@ export function AuditLogPage({ me }: { me: Me }) {
           </Table>
         )
       ) : null}
+      <LoadMoreButton
+        hasMore={log.hasNextPage}
+        loading={log.isFetchingNextPage}
+        onClick={() => void log.fetchNextPage()}
+      />
     </div>
   );
 }

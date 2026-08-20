@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, formatMoney, todayISO } from '@/lib/utils';
@@ -243,15 +244,12 @@ export function InvoicesPage({ me }: { me: Me }) {
   const [memo, setMemo] = useState('');
   const [lines, setLines] = useState<FormLine[]>([emptyLine()]);
 
-  const invoices = useQuery({
-    queryKey: ['invoices', { customerId: customerIdFilter }],
-    queryFn: () =>
-      api.get<{ items: InvoiceListItem[] }>(
-        `/api/v1/invoices${
-          customerIdFilter ? `?customerId=${encodeURIComponent(customerIdFilter)}` : ''
-        }`,
-      ),
-  });
+  const invoices = usePagedList<InvoiceListItem>(
+    ['invoices', { customerId: customerIdFilter }],
+    `/api/v1/invoices${
+      customerIdFilter ? `?customerId=${encodeURIComponent(customerIdFilter)}` : ''
+    }`,
+  );
   const customers = useQuery({
     queryKey: ['customers'],
     queryFn: () => api.get<{ items: Customer[] }>('/api/v1/customers'),
@@ -376,16 +374,17 @@ export function InvoicesPage({ me }: { me: Me }) {
     },
   });
 
+  const invoiceItems = invoices.items;
   const filtered = useMemo(
-    () => (invoices.data?.items ?? []).filter((i) => matchesTab(i, statusTab)),
-    [invoices.data, statusTab],
+    () => invoiceItems.filter((i) => matchesTab(i, statusTab)),
+    [invoiceItems, statusTab],
   );
 
   const filteredTotalCents = filtered.reduce((sum, i) => sum + toCents(i.total), 0n);
   const filteredOpenCents = filtered.reduce((sum, i) => sum + toCents(i.openBalance), 0n);
 
   const filterCustomerName = customerIdFilter
-    ? (invoices.data?.items[0]?.customerName ??
+    ? (invoiceItems[0]?.customerName ??
       (customers.data?.items ?? []).find((c) => c.id === customerIdFilter)?.displayName ??
       null)
     : null;
@@ -529,6 +528,11 @@ export function InvoicesPage({ me }: { me: Me }) {
           </TFoot>
         </Table>
       )}
+      <LoadMoreButton
+        hasMore={invoices.hasMore}
+        loading={invoices.isLoadingMore}
+        onClick={invoices.loadMore}
+      />
 
       {/* ----- new invoice dialog ----- */}
       <Dialog

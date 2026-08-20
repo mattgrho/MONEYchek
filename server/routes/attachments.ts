@@ -2,11 +2,12 @@ import { Router } from 'express';
 import multer from 'multer';
 import { createHash, randomBytes } from 'node:crypto';
 import { z } from 'zod';
-import { and, desc, eq } from 'drizzle-orm';
+import { and, desc, eq, inArray, sql } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import { attachments, brandSettings, entityAttachments } from '../db/schema/index';
 import { orgCtx, requirePermission } from '../middleware/auth';
-import { asyncHandler, parseBody, parseParams } from '../middleware/validate';
+import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/validate';
+import { PageQuery, decodeCursor, pageResult } from '../lib/pagination';
 import { rateLimit } from '../middleware/rate-limit';
 import { AppError } from '../lib/errors';
 import { getStorage } from '../storage/adapter';
@@ -150,17 +151,39 @@ attachmentsRouter.get(
   requirePermission('attachments.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
+    const conditions = [eq(attachments.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${attachments.createdAt}, ${attachments.id}) < (${after[0]}::timestamptz, ${after[1]}::uuid)`,
+      );
+    }
     const rows = await db
       .select()
       .from(attachments)
-      .where(eq(attachments.organizationId, ctx.organizationId))
-      .orderBy(desc(attachments.createdAt))
-      .limit(500);
-    const links = await db
-      .select()
-      .from(entityAttachments)
-      .where(eq(entityAttachments.organizationId, ctx.organizationId));
+      .where(and(...conditions))
+      .orderBy(desc(attachments.createdAt), desc(attachments.id))
+      .limit(query.limit + 1);
+    const page = pageResult(rows, query.limit, (r) => [
+      r.createdAt instanceof Date ? r.createdAt.toISOString() : String(r.createdAt),
+      r.id,
+    ]);
+    const links = page.items.length
+      ? await db
+          .select()
+          .from(entityAttachments)
+          .where(
+            and(
+              eq(entityAttachments.organizationId, ctx.organizationId),
+              inArray(
+                entityAttachments.attachmentId,
+                page.items.map((r) => r.id),
+              ),
+            ),
+          )
+      : [];
     const linksByAttachment = new Map<string, { entityType: string; entityId: string }[]>();
     for (const link of links) {
       const list = linksByAttachment.get(link.attachmentId) ?? [];
@@ -169,7 +192,8 @@ attachmentsRouter.get(
     }
     res.json({
       storageAvailable: getStorage().available,
-      items: rows.map((r) => ({ ...r, links: linksByAttachment.get(r.id) ?? [] })),
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({ ...r, links: linksByAttachment.get(r.id) ?? [] })),
     });
   }),
 );

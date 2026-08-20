@@ -192,7 +192,11 @@ export const vendorCreditAllocations = pgTable(
     createdByUserId: uuid('created_by_user_id').references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index('vca_org_bill_idx').on(t.organizationId, t.billId, t.effectiveDate)],
+  (t) => [
+    index('vca_org_bill_idx').on(t.organizationId, t.billId, t.effectiveDate),
+    index('vca_bill_idx').on(t.billId),
+    index('vca_credit_idx').on(t.vendorCreditId),
+  ],
 );
 
 export const billPayments = pgTable(
@@ -250,7 +254,11 @@ export const billPaymentAllocations = pgTable(
     createdByUserId: uuid('created_by_user_id').references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index('bpa_org_bill_idx').on(t.organizationId, t.billId, t.effectiveDate)],
+  (t) => [
+    index('bpa_org_bill_idx').on(t.organizationId, t.billId, t.effectiveDate),
+    index('bpa_bill_idx').on(t.billId),
+    index('bpa_payment_idx').on(t.billPaymentId),
+  ],
 );
 
 export const expenses = pgTable(

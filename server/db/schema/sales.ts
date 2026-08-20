@@ -300,6 +300,10 @@ export const customerPaymentAllocations = pgTable(
   (t) => [
     index('cpa_org_invoice_idx').on(t.organizationId, t.invoiceId, t.effectiveDate),
     index('cpa_org_payment_idx').on(t.organizationId, t.paymentId),
+    // Open-balance subqueries correlate on the bare document id; without
+    // these the org-first composites are unusable and PG seq-scans.
+    index('cpa_invoice_idx').on(t.invoiceId),
+    index('cpa_payment_idx').on(t.paymentId),
   ],
 );
 
@@ -376,7 +380,11 @@ export const creditAllocations = pgTable(
     createdByUserId: uuid('created_by_user_id').references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index('ca_org_invoice_idx').on(t.organizationId, t.invoiceId, t.effectiveDate)],
+  (t) => [
+    index('ca_org_invoice_idx').on(t.organizationId, t.invoiceId, t.effectiveDate),
+    index('ca_invoice_idx').on(t.invoiceId),
+    index('ca_credit_memo_idx').on(t.creditMemoId),
+  ],
 );
 
 export const invoiceWriteOffs = pgTable(
@@ -400,7 +408,10 @@ export const invoiceWriteOffs = pgTable(
     createdByUserId: uuid('created_by_user_id').references(() => users.id),
     createdAt: createdAt(),
   },
-  (t) => [index('write_offs_org_invoice_idx').on(t.organizationId, t.invoiceId)],
+  (t) => [
+    index('write_offs_org_invoice_idx').on(t.organizationId, t.invoiceId),
+    index('write_offs_invoice_idx').on(t.invoiceId),
+  ],
 );
 
 export const salesReceipts = pgTable(
@@ -535,5 +546,8 @@ export const customerRefunds = pgTable(
     memo: text('memo'),
     createdAt: createdAt(),
   },
-  (t) => [index('customer_refunds_source_idx').on(t.organizationId, t.sourceType, t.sourceId)],
+  (t) => [
+    index('customer_refunds_source_idx').on(t.organizationId, t.sourceType, t.sourceId),
+    index('customer_refunds_src_idx').on(t.sourceType, t.sourceId),
+  ],
 );

@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { desc, eq } from 'drizzle-orm';
+import { and, desc, eq, lt } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import { auditEvents, companyProfiles } from '../db/schema/index';
 import { orgCtx, requirePermission } from '../middleware/auth';
@@ -179,10 +179,12 @@ reportsRouter.get(
       req,
       z.object({
         limit: z.coerce.number().int().min(1).max(200).default(100),
-        beforeSeq: z.coerce.number().int().optional(),
+        beforeSeq: z.coerce.number().int().min(1).optional(),
       }),
     );
     const db = getDb();
+    const conditions = [eq(auditEvents.organizationId, ctx.organizationId)];
+    if (query.beforeSeq !== undefined) conditions.push(lt(auditEvents.seq, query.beforeSeq));
     const rows = await db
       .select({
         seq: auditEvents.seq,
@@ -197,10 +199,15 @@ reportsRouter.get(
         createdAt: auditEvents.createdAt,
       })
       .from(auditEvents)
-      .where(eq(auditEvents.organizationId, ctx.organizationId))
+      .where(and(...conditions))
       .orderBy(desc(auditEvents.seq))
-      .limit(query.limit);
-    res.json({ items: rows });
+      .limit(query.limit + 1);
+    const hasMore = rows.length > query.limit;
+    const items = hasMore ? rows.slice(0, query.limit) : rows;
+    res.json({
+      items,
+      nextBeforeSeq: hasMore && items.length > 0 ? items[items.length - 1]!.seq : null,
+    });
   }),
 );
 

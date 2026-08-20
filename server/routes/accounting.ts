@@ -13,6 +13,7 @@ import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/
 import { ACCOUNT_CATEGORIES } from '../db/schema/ledger';
 import { COA_TEMPLATES } from '../accounting/accounts';
 import { accountBalances, accountRegister } from '../reports/financial';
+import { closeChecklist } from '../reports/close-checklist';
 import {
   createAccount,
   createManualJournal,
@@ -336,6 +337,16 @@ accountingRouter.get(
       .where(eq(fiscalPeriods.organizationId, ctx.organizationId))
       .orderBy(asc(fiscalPeriods.startDate));
     res.json({ items: rows });
+  }),
+);
+
+accountingRouter.get(
+  '/periods/close-checklist',
+  requirePermission('periods.view'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const query = parseQuery(req, z.object({ through: DateString }));
+    res.json(await closeChecklist(getDb(), ctx.organizationId, query.through));
   }),
 );
 

@@ -17,6 +17,7 @@ import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/
 import { rateLimit } from '../middleware/rate-limit';
 import { AppError } from '../lib/errors';
 import { companyToday } from '../lib/dates';
+import { PageQuery, decodeCursor, pageResult } from '../lib/pagination';
 import {
   applyVendorCredit,
   billOpenBalance,
@@ -70,7 +71,8 @@ apRouter.get(
       .select()
       .from(vendors)
       .where(eq(vendors.organizationId, ctx.organizationId))
-      .orderBy(asc(vendors.displayName));
+      .orderBy(asc(vendors.displayName))
+      .limit(5000);
     res.json({ items: rows.filter((r) => query.includeInactive || r.active) });
   }),
 );
@@ -141,6 +143,8 @@ apRouter.get(
   requirePermission('bills.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const result = await getDb().execute(sql`
       SELECT b.id, b.number, b.vendor_id, v.display_name AS vendor_name,
              b.posting_status, b.approval_status, b.bill_date::text AS bill_date,
@@ -154,8 +158,9 @@ apRouter.get(
       FROM bills b
       JOIN vendors v ON v.id = b.vendor_id
       WHERE b.organization_id = ${ctx.organizationId}
+        ${after ? sql`AND (b.bill_date, b.number) < (${after[0]}::date, ${after[1]})` : sql``}
       ORDER BY b.bill_date DESC, b.number DESC
-      LIMIT 500
+      LIMIT ${query.limit + 1}
     `);
     const { roundMoney, cmp } = await import('@shared/money');
     interface Row {
@@ -171,8 +176,13 @@ apRouter.get(
       total: string;
       open_balance: string;
     }
+    const page = pageResult(result.rows as unknown as Row[], query.limit, (r) => [
+      r.bill_date,
+      r.number,
+    ]);
     res.json({
-      items: (result.rows as unknown as Row[]).map((r) => {
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => {
         const open = r.posting_status === 'posted' ? roundMoney(r.open_balance) : '0.00';
         return {
           id: r.id,
@@ -320,7 +330,15 @@ apRouter.get(
   requirePermission('expenses.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
+    const conditions = [eq(expenses.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${expenses.expenseDate}, ${expenses.number}) < (${after[0]}::date, ${after[1]})`,
+      );
+    }
     const rows = await db
       .select({
         id: expenses.id,
@@ -337,11 +355,15 @@ apRouter.get(
       })
       .from(expenses)
       .leftJoin(vendors, eq(expenses.vendorId, vendors.id))
-      .where(eq(expenses.organizationId, ctx.organizationId))
-      .orderBy(desc(expenses.expenseDate))
-      .limit(500);
+      .where(and(...conditions))
+      .orderBy(desc(expenses.expenseDate), desc(expenses.number))
+      .limit(query.limit + 1);
     const { roundMoney } = await import('@shared/money');
-    res.json({ items: rows.map((r) => ({ ...r, total: roundMoney(r.total) })) });
+    const page = pageResult(rows, query.limit, (r) => [r.expenseDate, r.number]);
+    res.json({
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({ ...r, total: roundMoney(r.total) })),
+    });
   }),
 );
 
@@ -429,6 +451,8 @@ apRouter.get(
   requirePermission('vendor_credits.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const result = await getDb().execute(sql`
       SELECT c.id, c.number, c.vendor_id, v.display_name AS vendor_name,
              c.posting_status, c.credit_date::text AS credit_date, c.total::text,
@@ -439,7 +463,9 @@ apRouter.get(
       FROM vendor_credits c
       JOIN vendors v ON v.id = c.vendor_id
       WHERE c.organization_id = ${ctx.organizationId}
-      ORDER BY c.credit_date DESC LIMIT 500
+        ${after ? sql`AND (c.credit_date, c.number) < (${after[0]}::date, ${after[1]})` : sql``}
+      ORDER BY c.credit_date DESC, c.number DESC
+      LIMIT ${query.limit + 1}
     `);
     const { roundMoney } = await import('@shared/money');
     interface Row {
@@ -452,8 +478,13 @@ apRouter.get(
       total: string;
       unapplied: string;
     }
+    const page = pageResult(result.rows as unknown as Row[], query.limit, (r) => [
+      r.credit_date,
+      r.number,
+    ]);
     res.json({
-      items: (result.rows as unknown as Row[]).map((r) => ({
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({
         id: r.id,
         number: r.number,
         vendorId: r.vendor_id,
@@ -534,7 +565,15 @@ apRouter.get(
   requirePermission('bill_payments.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
+    const conditions = [eq(billPayments.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${billPayments.paymentDate}, ${billPayments.number}) < (${after[0]}::date, ${after[1]})`,
+      );
+    }
     const rows = await db
       .select({
         id: billPayments.id,
@@ -549,19 +588,31 @@ apRouter.get(
       })
       .from(billPayments)
       .innerJoin(vendors, eq(billPayments.vendorId, vendors.id))
-      .where(eq(billPayments.organizationId, ctx.organizationId))
-      .orderBy(desc(billPayments.paymentDate))
-      .limit(500);
-    const allocations = await db
-      .select({
-        billPaymentId: billPaymentAllocations.billPaymentId,
-        billId: billPaymentAllocations.billId,
-        billNumber: bills.number,
-        amount: billPaymentAllocations.amount,
-      })
-      .from(billPaymentAllocations)
-      .innerJoin(bills, eq(billPaymentAllocations.billId, bills.id))
-      .where(eq(billPaymentAllocations.organizationId, ctx.organizationId));
+      .where(and(...conditions))
+      .orderBy(desc(billPayments.paymentDate), desc(billPayments.number))
+      .limit(query.limit + 1);
+    const page = pageResult(rows, query.limit, (r) => [r.paymentDate, r.number]);
+    const pageIds = page.items.map((r) => r.id);
+    const allocations = pageIds.length
+      ? await db
+          .select({
+            billPaymentId: billPaymentAllocations.billPaymentId,
+            billId: billPaymentAllocations.billId,
+            billNumber: bills.number,
+            amount: billPaymentAllocations.amount,
+          })
+          .from(billPaymentAllocations)
+          .innerJoin(bills, eq(billPaymentAllocations.billId, bills.id))
+          .where(
+            and(
+              eq(billPaymentAllocations.organizationId, ctx.organizationId),
+              sql`${billPaymentAllocations.billPaymentId} IN (${sql.join(
+                pageIds.map((id) => sql`${id}`),
+                sql`, `,
+              )})`,
+            ),
+          )
+      : [];
     const { roundMoney } = await import('@shared/money');
     const byPayment = new Map<string, { billId: string; billNumber: string; amount: string }[]>();
     for (const a of allocations) {
@@ -570,7 +621,8 @@ apRouter.get(
       byPayment.set(a.billPaymentId, list);
     }
     res.json({
-      items: rows.map((r) => ({
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({
         ...r,
         amount: roundMoney(r.amount),
         allocations: byPayment.get(r.id) ?? [],

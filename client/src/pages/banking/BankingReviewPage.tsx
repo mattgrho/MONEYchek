@@ -2,6 +2,7 @@ import { useMemo, useState, type ChangeEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Trash2 } from 'lucide-react';
 import { api, ApiError } from '@/lib/api';
+import { LoadMoreButton, usePagedList } from '@/lib/paging';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { cn, formatDate, formatMoney } from '@/lib/utils';
@@ -263,38 +264,26 @@ export function BankingReviewPage({ me }: { me: Me }) {
   const activeAccountId = selectedAccountId ?? accounts[0]?.accountId ?? null;
   const activeAccount = accounts.find((a) => a.accountId === activeAccountId) ?? null;
 
-  const forReviewItems = useQuery({
-    queryKey: ['banking-items', activeAccountId, 'for_review'],
-    queryFn: () =>
-      api.get<{ items: BankItem[] }>(
-        `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=for_review`,
-      ),
-    enabled: activeAccountId !== null,
-  });
-  const matchedItems = useQuery({
-    queryKey: ['banking-items', activeAccountId, 'matched'],
-    queryFn: () =>
-      api.get<{ items: BankItem[] }>(
-        `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=matched`,
-      ),
-    enabled: activeAccountId !== null && tab === 'resolved',
-  });
-  const addedItems = useQuery({
-    queryKey: ['banking-items', activeAccountId, 'added'],
-    queryFn: () =>
-      api.get<{ items: BankItem[] }>(
-        `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=added`,
-      ),
-    enabled: activeAccountId !== null && tab === 'resolved',
-  });
-  const excludedItems = useQuery({
-    queryKey: ['banking-items', activeAccountId, 'excluded'],
-    queryFn: () =>
-      api.get<{ items: BankItem[] }>(
-        `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=excluded`,
-      ),
-    enabled: activeAccountId !== null && tab === 'excluded',
-  });
+  const forReviewItems = usePagedList<BankItem>(
+    ['banking-items', activeAccountId, 'for_review'],
+    `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=for_review`,
+    { enabled: activeAccountId !== null },
+  );
+  const matchedItems = usePagedList<BankItem>(
+    ['banking-items', activeAccountId, 'matched'],
+    `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=matched`,
+    { enabled: activeAccountId !== null && tab === 'resolved' },
+  );
+  const addedItems = usePagedList<BankItem>(
+    ['banking-items', activeAccountId, 'added'],
+    `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=added`,
+    { enabled: activeAccountId !== null && tab === 'resolved' },
+  );
+  const excludedItems = usePagedList<BankItem>(
+    ['banking-items', activeAccountId, 'excluded'],
+    `/api/v1/banking/items?accountId=${encodeURIComponent(activeAccountId ?? '')}&state=excluded`,
+    { enabled: activeAccountId !== null && tab === 'excluded' },
+  );
   const suggestions = useQuery({
     queryKey: ['banking-suggestions', matchTarget?.id],
     queryFn: () =>
@@ -512,10 +501,12 @@ export function BankingReviewPage({ me }: { me: Me }) {
     (a) => a.accountId !== (transferTarget?.accountId ?? activeAccountId),
   );
 
+  const matchedList = matchedItems.items;
+  const addedList = addedItems.items;
   const resolvedItems = useMemo(() => {
-    const combined = [...(matchedItems.data?.items ?? []), ...(addedItems.data?.items ?? [])];
+    const combined = [...matchedList, ...addedList];
     return combined.sort((a, b) => (a.txnDate < b.txnDate ? 1 : a.txnDate > b.txnDate ? -1 : 0));
-  }, [matchedItems.data, addedItems.data]);
+  }, [matchedList, addedList]);
 
   if (bankAccounts.isLoading) return <Spinner label="Loading bank accounts" />;
   if (bankAccounts.error) return <ErrorNote error={bankAccounts.error} />;
@@ -625,101 +616,110 @@ export function BankingReviewPage({ me }: { me: Me }) {
               <Spinner label="Loading transactions" />
             ) : forReviewItems.error ? (
               <ErrorNote error={forReviewItems.error} />
-            ) : (forReviewItems.data?.items ?? []).length === 0 ? (
-              <EmptyState
-                title="Nothing to review"
-                description="Imported transactions that need attention will appear here."
-              />
             ) : (
-              <Table>
-                <THead>
-                  <TR>
-                    <TH>Date</TH>
-                    <TH>Description</TH>
-                    <TH>Reference</TH>
-                    <TH className="text-right">Amount</TH>
-                    <TH>State</TH>
-                    {canPost ? <TH className="w-72">Actions</TH> : null}
-                  </TR>
-                </THead>
-                <TBody>
-                  {(forReviewItems.data?.items ?? []).map((item) => (
-                    <TR key={item.id}>
-                      <TD className="text-muted-foreground">{formatDate(item.txnDate)}</TD>
-                      <TD>{item.description}</TD>
-                      <TD className="text-muted-foreground">{item.reference ?? '—'}</TD>
-                      <AmountCell amount={item.amount} currency={currency} />
-                      <TD>
-                        <StateBadge state={item.state} />
-                      </TD>
-                      {canPost ? (
-                        <TD>
-                          <div className="flex flex-wrap gap-1">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                matchItem.reset();
-                                setMatchTarget(item);
-                              }}
-                            >
-                              Match
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openCategorize(item)}
-                            >
-                              Categorize
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                transferItem.reset();
-                                setTransferOtherAccountId('');
-                                setTransferTarget(item);
-                              }}
-                            >
-                              Transfer
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              loading={
-                                setItemState.isPending &&
-                                setItemState.variables?.itemId === item.id &&
-                                setItemState.variables?.state === 'excluded'
-                              }
-                              onClick={() =>
-                                setItemState.mutate({ itemId: item.id, state: 'excluded' })
-                              }
-                            >
-                              Exclude
-                            </Button>
-                            {item.state === 'possible_duplicate' ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                loading={
-                                  setItemState.isPending &&
-                                  setItemState.variables?.itemId === item.id &&
-                                  setItemState.variables?.state === 'new'
-                                }
-                                onClick={() =>
-                                  setItemState.mutate({ itemId: item.id, state: 'new' })
-                                }
-                              >
-                                Not a duplicate
-                              </Button>
-                            ) : null}
-                          </div>
-                        </TD>
-                      ) : null}
-                    </TR>
-                  ))}
-                </TBody>
-              </Table>
+              <>
+                {forReviewItems.items.length === 0 ? (
+                  <EmptyState
+                    title="Nothing to review"
+                    description="Imported transactions that need attention will appear here."
+                  />
+                ) : (
+                  <Table>
+                    <THead>
+                      <TR>
+                        <TH>Date</TH>
+                        <TH>Description</TH>
+                        <TH>Reference</TH>
+                        <TH className="text-right">Amount</TH>
+                        <TH>State</TH>
+                        {canPost ? <TH className="w-72">Actions</TH> : null}
+                      </TR>
+                    </THead>
+                    <TBody>
+                      {forReviewItems.items.map((item) => (
+                        <TR key={item.id}>
+                          <TD className="text-muted-foreground">{formatDate(item.txnDate)}</TD>
+                          <TD>{item.description}</TD>
+                          <TD className="text-muted-foreground">{item.reference ?? '—'}</TD>
+                          <AmountCell amount={item.amount} currency={currency} />
+                          <TD>
+                            <StateBadge state={item.state} />
+                          </TD>
+                          {canPost ? (
+                            <TD>
+                              <div className="flex flex-wrap gap-1">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    matchItem.reset();
+                                    setMatchTarget(item);
+                                  }}
+                                >
+                                  Match
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => openCategorize(item)}
+                                >
+                                  Categorize
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => {
+                                    transferItem.reset();
+                                    setTransferOtherAccountId('');
+                                    setTransferTarget(item);
+                                  }}
+                                >
+                                  Transfer
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  loading={
+                                    setItemState.isPending &&
+                                    setItemState.variables?.itemId === item.id &&
+                                    setItemState.variables?.state === 'excluded'
+                                  }
+                                  onClick={() =>
+                                    setItemState.mutate({ itemId: item.id, state: 'excluded' })
+                                  }
+                                >
+                                  Exclude
+                                </Button>
+                                {item.state === 'possible_duplicate' ? (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    loading={
+                                      setItemState.isPending &&
+                                      setItemState.variables?.itemId === item.id &&
+                                      setItemState.variables?.state === 'new'
+                                    }
+                                    onClick={() =>
+                                      setItemState.mutate({ itemId: item.id, state: 'new' })
+                                    }
+                                  >
+                                    Not a duplicate
+                                  </Button>
+                                ) : null}
+                              </div>
+                            </TD>
+                          ) : null}
+                        </TR>
+                      ))}
+                    </TBody>
+                  </Table>
+                )}
+                <LoadMoreButton
+                  hasMore={forReviewItems.hasMore}
+                  loading={forReviewItems.isLoadingMore}
+                  onClick={forReviewItems.loadMore}
+                />
+              </>
             )
           ) : tab === 'resolved' ? (
             matchedItems.isLoading || addedItems.isLoading ? (
@@ -728,25 +728,48 @@ export function BankingReviewPage({ me }: { me: Me }) {
               <ErrorNote error={matchedItems.error} />
             ) : addedItems.error ? (
               <ErrorNote error={addedItems.error} />
-            ) : resolvedItems.length === 0 ? (
-              <EmptyState
-                title="No resolved transactions"
-                description="Matched and added transactions will appear here."
-              />
             ) : (
-              <ReadOnlyItemsTable items={resolvedItems} currency={currency} />
+              <>
+                {resolvedItems.length === 0 ? (
+                  <EmptyState
+                    title="No resolved transactions"
+                    description="Matched and added transactions will appear here."
+                  />
+                ) : (
+                  <ReadOnlyItemsTable items={resolvedItems} currency={currency} />
+                )}
+                <LoadMoreButton
+                  hasMore={matchedItems.hasMore}
+                  loading={matchedItems.isLoadingMore}
+                  onClick={matchedItems.loadMore}
+                />
+                <LoadMoreButton
+                  hasMore={addedItems.hasMore}
+                  loading={addedItems.isLoadingMore}
+                  onClick={addedItems.loadMore}
+                />
+              </>
             )
           ) : excludedItems.isLoading ? (
             <Spinner label="Loading excluded transactions" />
           ) : excludedItems.error ? (
             <ErrorNote error={excludedItems.error} />
-          ) : (excludedItems.data?.items ?? []).length === 0 ? (
-            <EmptyState
-              title="No excluded transactions"
-              description="Transactions you exclude from the books will appear here."
-            />
           ) : (
-            <ReadOnlyItemsTable items={excludedItems.data?.items ?? []} currency={currency} />
+            <>
+              {excludedItems.items.length === 0 ? (
+                <EmptyState
+                  title="No excluded transactions"
+                  description="Transactions you exclude from the books will appear here."
+                />
+              ) : (
+                <ReadOnlyItemsTable items={excludedItems.items} currency={currency} />
+              )}
+              <LoadMoreButton
+                hasMore={excludedItems.hasMore}
+                loading={excludedItems.isLoadingMore}
+                onClick={excludedItems.loadMore}
+              />
+            </>
           )}
         </>
       )}

@@ -21,6 +21,7 @@ import { asyncHandler, parseBody, parseParams, parseQuery } from '../middleware/
 import { rateLimit } from '../middleware/rate-limit';
 import { AppError } from '../lib/errors';
 import { companyToday } from '../lib/dates';
+import { PageQuery, decodeCursor, pageResult } from '../lib/pagination';
 import {
   createAndPostSalesReceipt,
   createCreditMemoDraft,
@@ -105,7 +106,8 @@ arRouter.get(
   requirePermission('invoices.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
-    const query = parseQuery(req, z.object({ customerId: z.string().uuid().optional() }));
+    const query = parseQuery(req, PageQuery.extend({ customerId: z.string().uuid().optional() }));
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
     const result = await db.execute(sql`
       SELECT i.id, i.number, i.customer_id, c.display_name AS customer_name,
@@ -124,12 +126,18 @@ arRouter.get(
       JOIN customers c ON c.id = i.customer_id
       WHERE i.organization_id = ${ctx.organizationId}
         ${query.customerId ? sql`AND i.customer_id = ${query.customerId}` : sql``}
+        ${after ? sql`AND (i.invoice_date, i.number) < (${after[0]}::date, ${after[1]})` : sql``}
       ORDER BY i.invoice_date DESC, i.number DESC
-      LIMIT 500
+      LIMIT ${query.limit + 1}
     `);
     const { roundMoney, cmp } = await import('@shared/money');
+    const page = pageResult(result.rows as unknown as ArListRow[], query.limit, (r) => [
+      r.invoice_date,
+      r.number,
+    ]);
     res.json({
-      items: (result.rows as unknown as ArListRow[]).map((r) => {
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => {
         const open = r.posting_status === 'posted' ? roundMoney(r.open_balance) : '0.00';
         return {
           id: r.id,
@@ -321,6 +329,8 @@ arRouter.get(
   requirePermission('customer_payments.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const result = await getDb().execute(sql`
       SELECT p.id, p.number, p.customer_id, c.display_name AS customer_name,
              p.posting_status, p.payment_date::text AS payment_date, p.method,
@@ -335,12 +345,18 @@ arRouter.get(
       JOIN customers c ON c.id = p.customer_id
       JOIN accounts a ON a.id = p.deposit_to_account_id
       WHERE p.organization_id = ${ctx.organizationId}
+        ${after ? sql`AND (p.payment_date, p.number) < (${after[0]}::date, ${after[1]})` : sql``}
       ORDER BY p.payment_date DESC, p.number DESC
-      LIMIT 500
+      LIMIT ${query.limit + 1}
     `);
     const { roundMoney } = await import('@shared/money');
+    const page = pageResult(result.rows as unknown as PaymentListRow[], query.limit, (r) => [
+      r.payment_date,
+      r.number,
+    ]);
     res.json({
-      items: (result.rows as unknown as PaymentListRow[]).map((r) => ({
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({
         id: r.id,
         number: r.number,
         customerId: r.customer_id,
@@ -472,6 +488,8 @@ arRouter.get(
   requirePermission('credit_memos.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const result = await getDb().execute(sql`
       SELECT m.id, m.number, m.customer_id, c.display_name AS customer_name,
              m.posting_status, m.credit_date::text AS credit_date, m.total::text,
@@ -484,12 +502,18 @@ arRouter.get(
       FROM credit_memos m
       JOIN customers c ON c.id = m.customer_id
       WHERE m.organization_id = ${ctx.organizationId}
+        ${after ? sql`AND (m.credit_date, m.number) < (${after[0]}::date, ${after[1]})` : sql``}
       ORDER BY m.credit_date DESC, m.number DESC
-      LIMIT 500
+      LIMIT ${query.limit + 1}
     `);
     const { roundMoney } = await import('@shared/money');
+    const page = pageResult(result.rows as unknown as CreditListRow[], query.limit, (r) => [
+      r.credit_date,
+      r.number,
+    ]);
     res.json({
-      items: (result.rows as unknown as CreditListRow[]).map((r) => ({
+      nextCursor: page.nextCursor,
+      items: page.items.map((r) => ({
         id: r.id,
         number: r.number,
         customerId: r.customer_id,
@@ -616,6 +640,14 @@ arRouter.get(
   requirePermission('sales_receipts.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
+    const conditions = [eq(salesReceipts.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${salesReceipts.receiptDate}, ${salesReceipts.number}) < (${after[0]}::date, ${after[1]})`,
+      );
+    }
     const rows = await getDb()
       .select({
         id: salesReceipts.id,
@@ -628,10 +660,11 @@ arRouter.get(
       })
       .from(salesReceipts)
       .leftJoin(customers, eq(salesReceipts.customerId, customers.id))
-      .where(eq(salesReceipts.organizationId, ctx.organizationId))
-      .orderBy(desc(salesReceipts.receiptDate))
-      .limit(500);
-    res.json({ items: rows });
+      .where(and(...conditions))
+      .orderBy(desc(salesReceipts.receiptDate), desc(salesReceipts.number))
+      .limit(query.limit + 1);
+    const page = pageResult(rows, query.limit, (r) => [r.receiptDate, r.number]);
+    res.json({ items: page.items, nextCursor: page.nextCursor });
   }),
 );
 
@@ -673,17 +706,37 @@ arRouter.get(
   requirePermission('deposits.view'),
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
+    const query = parseQuery(req, PageQuery);
+    const after = query.cursor ? decodeCursor(query.cursor, 2) : null;
     const db = getDb();
+    const conditions = [eq(deposits.organizationId, ctx.organizationId)];
+    if (after) {
+      conditions.push(
+        sql`(${deposits.depositDate}, ${deposits.number}) < (${after[0]}::date, ${after[1]})`,
+      );
+    }
     const rows = await db
       .select()
       .from(deposits)
-      .where(eq(deposits.organizationId, ctx.organizationId))
-      .orderBy(desc(deposits.depositDate))
-      .limit(500);
-    const components = await db
-      .select()
-      .from(depositComponents)
-      .where(eq(depositComponents.organizationId, ctx.organizationId));
+      .where(and(...conditions))
+      .orderBy(desc(deposits.depositDate), desc(deposits.number))
+      .limit(query.limit + 1);
+    const page = pageResult(rows, query.limit, (r) => [r.depositDate, r.number]);
+    const pageIds = page.items.map((d) => d.id);
+    const components = pageIds.length
+      ? await db
+          .select()
+          .from(depositComponents)
+          .where(
+            and(
+              eq(depositComponents.organizationId, ctx.organizationId),
+              sql`${depositComponents.depositId} IN (${sql.join(
+                pageIds.map((id) => sql`${id}`),
+                sql`, `,
+              )})`,
+            ),
+          )
+      : [];
     const byDeposit = new Map<string, typeof components>();
     for (const c of components) {
       const list = byDeposit.get(c.depositId) ?? [];
@@ -691,7 +744,8 @@ arRouter.get(
       byDeposit.set(c.depositId, list);
     }
     res.json({
-      items: rows.map((d) => ({ ...d, components: byDeposit.get(d.id) ?? [] })),
+      nextCursor: page.nextCursor,
+      items: page.items.map((d) => ({ ...d, components: byDeposit.get(d.id) ?? [] })),
     });
   }),
 );
