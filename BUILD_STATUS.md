@@ -102,9 +102,17 @@ in this build environment; see External prerequisites).
 - Production secrets per .env.example; custom domain + APP_BASE_URL.
 - Verify Replit PITR/backup retention before claiming backups exist.
 
+- [x] Email outbox — transactional outbox enqueue on invitation creation,
+      fail-closed adapter (Resend / test-capture / unavailable), jobs runner
+      (`scripts/jobs-run.ts`, SKIP LOCKED claiming, exponential backoff,
+      dead-letter state, post-delivery body scrubbing since invite links are
+      live tokens). Resend NOT verified live from this environment —
+      documented in README. 4 integration tests.
+
 ## Next actions (in order)
 
-1. Email outbox worker behind a real provider config; recurring templates
-   via Scheduled Deployment.
-2. Remaining gated extensions (projects/time, budgets/recurring, OFX/QFX,
-   XLSX, cash-basis, SoCF, payroll import) as separate gates.
+1. Remaining gated extensions (projects/time, budgets/recurring, OFX/QFX,
+   XLSX, cash-basis, SoCF, payroll import, recurring templates) as
+   separate gates.
+2. Verify the Resend adapter against the live service once credentials
+   exist (a real send + provider id recorded).

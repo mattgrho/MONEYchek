@@ -5,6 +5,7 @@ import { invitations, memberships, roles } from '../db/schema/index';
 import { AppError } from '../lib/errors';
 import { getEnv } from '../config/env';
 import { writeAuditEvent } from '../accounting/audit';
+import { enqueueOutboxEvent } from './outbox';
 import type { OrgContext } from './identity';
 import type { AuthenticatedIdentity } from '../auth/adapter';
 
@@ -56,6 +57,30 @@ export async function createInvitation(
       entityId: row!.id,
       payload: { email, roleKey: role[0]!.key },
       correlationId,
+    });
+    // Queue the invitation email in the same transaction. Delivery only
+    // happens when the job runner drains the outbox with a configured
+    // provider; until then the inviter shares the link manually. The queued
+    // body carries the live link (unlike invitations, which store only the
+    // token hash): acceptance is still bound to the invited email's verified
+    // identity, and the worker scrubs the body once delivered.
+    const base = getEnv().APP_BASE_URL.replace(/\/$/, '');
+    await enqueueOutboxEvent(tx, {
+      organizationId: ctx.organizationId,
+      jobType: 'email.invitation',
+      idempotencyKey: `invitation-${row!.id}`,
+      payload: {
+        to: email,
+        subject: `You are invited to join as ${role[0]!.name}`,
+        text: [
+          `You have been invited to join the company books as ${role[0]!.name}.`,
+          '',
+          `Accept the invitation here: ${base}/accept-invitation?token=${token}`,
+          '',
+          `This link is single-use and expires ${expiresAt.toISOString().slice(0, 10)}.`,
+          'If you were not expecting this invitation, ignore this message.',
+        ].join('\n'),
+      },
     });
     return row!;
   });

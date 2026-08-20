@@ -221,8 +221,15 @@ reversals, close/reopen, reconciliation, exports, and uploads.
   hard safety bound rather than paginated; transactional lists use keyset
   cursor pagination with Load more (see docs/PERFORMANCE.md for the measured
   10k-transaction results).
-- Email sending is not implemented (no provider assumed); "sent" states are
-  never faked.
+- Email delivery is fail-closed: invitation emails queue in a transactional
+  outbox and the job runner (`npm run jobs:run -- --once`, meant for a
+  Scheduled Deployment) drains them only when `EMAIL_PROVIDER=resend`,
+  `RESEND_API_KEY`, and `EMAIL_FROM` are configured. Without a provider,
+  events stay queued and the inviter shares links manually — "sent" states
+  are never faked. The Resend adapter has NOT been verified against the
+  live service from this build environment (no credentials); verify with a
+  real key before relying on it. Document (invoice/statement) emailing is
+  not implemented — PDFs are downloaded and sent manually.
 - Moderate (not high/critical) advisory findings exist in production
   dependencies with no non-breaking fix: react-router 6 (two moderates;
   fix requires v7 migration) and a transitive `uuid` under
