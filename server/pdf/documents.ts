@@ -21,7 +21,7 @@ export interface DocumentBrand {
 }
 
 export interface SalesDocumentData {
-  kind: 'INVOICE' | 'ESTIMATE' | 'CREDIT MEMO';
+  kind: 'INVOICE' | 'ESTIMATE' | 'CREDIT MEMO' | 'PURCHASE ORDER';
   number: string;
   issueDate: string;
   dueDate?: string | null;
@@ -123,7 +123,15 @@ export function renderSalesDocumentPdf(
       .font('Helvetica-Bold')
       .fontSize(9)
       .fillColor('#666666')
-      .text(data.kind === 'ESTIMATE' ? 'PREPARED FOR' : 'BILL TO', M, y);
+      .text(
+        data.kind === 'ESTIMATE'
+          ? 'PREPARED FOR'
+          : data.kind === 'PURCHASE ORDER'
+            ? 'VENDOR'
+            : 'BILL TO',
+        M,
+        y,
+      );
     doc
       .font('Helvetica-Bold')
       .fontSize(11)

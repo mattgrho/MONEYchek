@@ -29,11 +29,16 @@ prerequisite are listed truthfully in [BUILD_STATUS.md](BUILD_STATUS.md).
   (draft → post freezes the document), payments with append-only allocations
   and oldest-first auto-apply, credit memos, refunds of unapplied credit,
   bad-debt write-offs, voids with exact reversal, Undeposited Funds and
-  grouped deposits, sales receipts, branded invoice/estimate/credit-memo PDFs
-  and open-item customer statements (JSON + PDF).
-- **Purchase to pay**: vendors, bills with one-step approval (threshold +
-  separation of duties), expenses/check/card purchases, vendor credits with
-  application, bill payments with validated allocations.
+  grouped deposits, sales receipts, customer retainers (liability-backed
+  prepayments applied to invoices with append-only history), NSF/returned
+  payments (reopens the invoices, credits the right bank account), branded
+  invoice/estimate/credit-memo PDFs and open-item customer statements
+  (JSON + PDF).
+- **Purchase to pay**: vendors, purchase orders with partial conversion to
+  bills (overbilling blocked, branded PO PDFs), bills with configurable one-
+  or two-step approval (threshold, separation of duties, distinct approvers,
+  immutable approval history), expenses/check/card purchases, vendor credits
+  with application, bill payments with validated allocations.
 - **Banking**: CSV statement import (mapping, dry run, idempotent execution,
   duplicate staging for human review), match/categorize/split/transfer/
   exclude, bank rules (suggested-only by default), bank and credit-card
@@ -197,9 +202,8 @@ reversals, close/reopen, reconciliation, exports, and uploads.
 - **Gated features (hidden, not half-built)**: inventory UI (subledger and
   posting are complete and tested; navigation stays hidden until the full
   module gate passes), sales-tax center UI beyond manual rates on documents,
-  projects/time, purchase orders, budgets/recurring/cash outlook, OFX/QFX,
-  XLSX, cash-basis reports, Statement of Cash Flows, customer retainers,
-  NSF/returned-payment workflows, payroll-journal import, custom fields,
+  projects/time, budgets/recurring/cash outlook, OFX/QFX, XLSX, cash-basis
+  reports, Statement of Cash Flows, payroll-journal import, custom fields,
   saved views, global search, command palette, PWA.
 - Sales tax is one combined manual rate per document (agency/components
   model is schema-ready); tax liability reporting beyond the Trial Balance

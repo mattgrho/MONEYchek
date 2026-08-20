@@ -68,10 +68,11 @@ export const bills = pgTable(
     vendorReference: text('vendor_reference'),
     postingStatus: text('posting_status', { enum: POSTING_STATUS }).notNull().default('draft'),
     approvalStatus: text('approval_status', {
-      enum: ['not_required', 'pending', 'approved', 'rejected'],
+      enum: ['not_required', 'pending', 'partially_approved', 'approved', 'rejected'],
     })
       .notNull()
       .default('not_required'),
+    purchaseOrderId: uuid('purchase_order_id').references(() => purchaseOrders.id),
     billDate: date('bill_date').notNull(),
     dueDate: date('due_date').notNull(),
     termsDays: integer('terms_days'),
@@ -319,4 +320,91 @@ export const expenseLines = pgTable(
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('expense_lines_expense_line_uq').on(t.expenseId, t.lineNumber)],
+);
+
+/**
+ * Purchase orders are commitments, not accounting events: nothing posts to
+ * the ledger until a PO converts into a bill. Conversion tracks billed
+ * quantity per line so partial billing is exact and overbilling is blocked.
+ */
+export const purchaseOrders = pgTable(
+  'purchase_orders',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    number: text('number').notNull(),
+    vendorId: uuid('vendor_id')
+      .notNull()
+      .references(() => vendors.id),
+    status: text('status', {
+      enum: ['draft', 'open', 'partially_billed', 'billed', 'closed', 'canceled'],
+    })
+      .notNull()
+      .default('draft'),
+    poDate: date('po_date').notNull(),
+    expectedDate: date('expected_date'),
+    shipTo: text('ship_to'),
+    memo: text('memo'),
+    vendorMessage: text('vendor_message'),
+    total: numeric('total', { precision: 20, scale: 4 }).notNull().default('0'),
+    version: integer('version').notNull().default(1),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('purchase_orders_org_number_uq').on(t.organizationId, t.number),
+    index('purchase_orders_org_vendor_idx').on(t.organizationId, t.vendorId),
+    index('purchase_orders_org_status_idx').on(t.organizationId, t.status),
+  ],
+);
+
+export const purchaseOrderLines = pgTable(
+  'purchase_order_lines',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    purchaseOrderId: uuid('purchase_order_id')
+      .notNull()
+      .references(() => purchaseOrders.id, { onDelete: 'cascade' }),
+    lineNumber: integer('line_number').notNull(),
+    productId: uuid('product_id').references(() => productsServices.id),
+    accountId: uuid('account_id').references(() => accounts.id),
+    description: text('description').notNull().default(''),
+    quantity: numeric('quantity', { precision: 20, scale: 6 }).notNull().default('1'),
+    unitCost: numeric('unit_cost', { precision: 20, scale: 6 }).notNull().default('0'),
+    amount: numeric('amount', { precision: 20, scale: 4 }).notNull().default('0'),
+    billedQuantity: numeric('billed_quantity', { precision: 20, scale: 6 }).notNull().default('0'),
+    createdAt: createdAt(),
+  },
+  (t) => [uniqueIndex('po_lines_po_line_uq').on(t.purchaseOrderId, t.lineNumber)],
+);
+
+/**
+ * Immutable per-step approval decisions. Two-step mode requires two distinct
+ * approvers, both different from the submitter (separation of duties).
+ */
+export const billApprovals = pgTable(
+  'bill_approvals',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    billId: uuid('bill_id')
+      .notNull()
+      .references(() => bills.id),
+    step: integer('step').notNull(),
+    decision: text('decision', { enum: ['approved', 'rejected'] }).notNull(),
+    decidedByUserId: uuid('decided_by_user_id')
+      .notNull()
+      .references(() => users.id),
+    decidedAt: timestamp('decided_at', { withTimezone: true }).notNull().defaultNow(),
+    reason: text('reason'),
+  },
+  (t) => [index('bill_approvals_bill_idx').on(t.billId)],
 );

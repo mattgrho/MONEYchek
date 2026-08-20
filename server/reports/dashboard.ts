@@ -51,6 +51,8 @@ export async function getDashboardData(
                     WHERE ca.invoice_id = i.id), 0)
         - COALESCE((SELECT SUM(w.amount) FROM invoice_write_offs w
                     WHERE w.invoice_id = i.id AND w.reversal_of_write_off_id IS NULL), 0)
+        - COALESCE((SELECT SUM(ra.amount) FROM retainer_applications ra
+                    WHERE ra.invoice_id = i.id), 0)
         AS open_balance
       FROM invoices i
       WHERE i.organization_id = ${organizationId} AND i.posting_status = 'posted'

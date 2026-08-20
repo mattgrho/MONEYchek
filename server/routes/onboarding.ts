@@ -384,3 +384,64 @@ function advance(current: (typeof STEPS)[number]): string {
   const idx = STEPS.indexOf(current);
   return STEPS[Math.min(idx + 1, STEPS.length - 1)]!;
 }
+
+/* --------------------------- Purchasing controls ------------------------- */
+
+const PurchasingSettingsSchema = z.object({
+  billApprovalThreshold: z
+    .string()
+    .regex(/^\d+(\.\d+)?$/)
+    .nullable()
+    .optional(),
+  approvalMode: z.enum(['one_step', 'two_step']).optional(),
+  separationOfDuties: z.boolean().optional(),
+});
+
+onboardingRouter.get(
+  '/settings/purchasing',
+  requirePermission('company.edit'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const [row] = await getDb()
+      .select()
+      .from(purchasingSettings)
+      .where(eq(purchasingSettings.organizationId, ctx.organizationId))
+      .limit(1);
+    if (!row) throw AppError.notFound('Purchasing settings not found');
+    res.json(row);
+  }),
+);
+
+onboardingRouter.patch(
+  '/settings/purchasing',
+  requirePermission('company.edit'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const body = parseBody(req, PurchasingSettingsSchema);
+    const db = getDb();
+    await db.transaction(async (tx) => {
+      const patch: Record<string, unknown> = { updatedAt: new Date() };
+      if (body.billApprovalThreshold !== undefined) {
+        patch.billApprovalThreshold = body.billApprovalThreshold;
+      }
+      if (body.approvalMode !== undefined) patch.approvalMode = body.approvalMode;
+      if (body.separationOfDuties !== undefined) {
+        patch.separationOfDuties = body.separationOfDuties;
+      }
+      await tx
+        .update(purchasingSettings)
+        .set(patch)
+        .where(eq(purchasingSettings.organizationId, ctx.organizationId));
+      await writeAuditEvent(tx, {
+        organizationId: ctx.organizationId,
+        actorUserId: ctx.userId,
+        actorRole: ctx.roleKey,
+        action: 'purchasing_settings.updated',
+        entityType: 'purchasing_settings',
+        payload: { fields: Object.keys(body) },
+        correlationId: req.correlationId,
+      });
+    });
+    res.json({ ok: true });
+  }),
+);

@@ -242,6 +242,7 @@ export const accountingSettings = pgTable(
     defaultIncomeAccountId: uuid('default_income_account_id'),
     defaultExpenseAccountId: uuid('default_expense_account_id'),
     badDebtAccountId: uuid('bad_debt_account_id'),
+    customerRetainersAccountId: uuid('customer_retainers_account_id'),
     version: integer('version').notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -273,6 +274,10 @@ export const purchasingSettings = pgTable(
       .notNull()
       .references(() => organizations.id),
     billApprovalThreshold: numeric('bill_approval_threshold', { precision: 20, scale: 4 }),
+    /** one_step: a single approver; two_step: two distinct approvers. */
+    approvalMode: text('approval_mode', { enum: ['one_step', 'two_step'] })
+      .notNull()
+      .default('one_step'),
     separationOfDuties: boolean('separation_of_duties').notNull().default(true),
     vendorLabel: text('vendor_label').notNull().default('Vendor'),
     version: integer('version').notNull().default(1),

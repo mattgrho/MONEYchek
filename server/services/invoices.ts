@@ -313,6 +313,9 @@ export async function invoiceOpenBalance(
       - COALESCE((SELECT SUM(w.amount) FROM invoice_write_offs w
                   WHERE w.invoice_id = i.id AND w.reversal_of_write_off_id IS NULL
                   ${asOf ? sql`AND w.write_off_date <= ${asOf}::date` : sql``}), 0)
+      - COALESCE((SELECT SUM(ra.amount) FROM retainer_applications ra
+                  WHERE ra.invoice_id = i.id
+                  ${asOf ? sql`AND ra.effective_date <= ${asOf}::date` : sql``}), 0)
       AS open_balance
     FROM invoices i WHERE i.id = ${invoiceId}
   `);

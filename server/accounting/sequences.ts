@@ -21,6 +21,8 @@ export const DOCUMENT_TYPES = [
   'vendor_credit',
   'expense',
   'manual_journal',
+  'purchase_order',
+  'retainer',
 ] as const;
 export type DocumentType = (typeof DOCUMENT_TYPES)[number];
 
@@ -37,6 +39,8 @@ const DEFAULT_PREFIXES: Record<DocumentType, string> = {
   vendor_credit: 'VC-',
   expense: 'EXP-',
   manual_journal: 'JE-',
+  purchase_order: 'PO-',
+  retainer: 'RET-',
 };
 
 async function nextValue(

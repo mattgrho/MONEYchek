@@ -170,7 +170,8 @@ export async function closeChecklist(
       db,
       sql`SELECT COUNT(*)::text FROM bills
           WHERE organization_id = ${organizationId}
-            AND approval_status = 'pending' AND bill_date <= ${throughDate}::date`,
+            AND approval_status IN ('pending', 'partially_approved')
+            AND bill_date <= ${throughDate}::date`,
     ),
   );
   items.push({

@@ -12,6 +12,9 @@ import {
   estimates,
   invoiceLines,
   invoices,
+  purchaseOrderLines,
+  purchaseOrders,
+  vendors,
 } from '../db/schema/index';
 import { orgCtx, requirePermission } from '../middleware/auth';
 import { asyncHandler, parseParams, parseQuery } from '../middleware/validate';
@@ -213,6 +216,53 @@ documentsRouter.get(
       currency: brand.currency,
     });
     sendPdf(res, `${estimate.number}.pdf`, pdf);
+  }),
+);
+
+documentsRouter.get(
+  '/purchase-orders/:id/pdf',
+  requirePermission('purchase_orders.view'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const { id } = parseParams(req, IdParam);
+    const db = getDb();
+    const [po] = await db
+      .select()
+      .from(purchaseOrders)
+      .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, ctx.organizationId)))
+      .limit(1);
+    if (!po) throw AppError.notFound('Purchase order not found');
+    const [vendor] = await db
+      .select()
+      .from(vendors)
+      .where(eq(vendors.id, po.vendorId))
+      .limit(1);
+    const lines = await db
+      .select()
+      .from(purchaseOrderLines)
+      .where(eq(purchaseOrderLines.purchaseOrderId, id))
+      .orderBy(asc(purchaseOrderLines.lineNumber));
+    const brand = await loadBrand(ctx.organizationId);
+    const pdf = await renderSalesDocumentPdf(brand, {
+      kind: 'PURCHASE ORDER',
+      number: po.number,
+      issueDate: po.poDate,
+      expirationDate: po.expectedDate,
+      status: po.status === 'draft' ? 'DRAFT' : po.status.replace('_', ' ').toUpperCase(),
+      customer: { name: vendor?.displayName ?? 'Vendor', email: vendor?.email ?? null },
+      lines: lines.map((l) => ({
+        description: l.description,
+        quantity: formatQuantityForApi(l.quantity),
+        unitPrice: roundMoney(l.unitCost),
+        amount: roundMoney(l.amount),
+      })),
+      subtotal: roundMoney(po.total),
+      taxTotal: '0.00',
+      total: roundMoney(po.total),
+      memoToCustomer: po.vendorMessage,
+      currency: brand.currency,
+    });
+    sendPdf(res, `${po.number}.pdf`, pdf);
   }),
 );
 

@@ -9,6 +9,8 @@ import { onboardingRouter } from './onboarding';
 import { salesRouter } from './sales';
 import { arRouter } from './ar';
 import { apRouter } from './ap';
+import { purchaseOrdersRouter } from './purchase-orders';
+import { retainersRouter } from './retainers';
 import { bankingRouter } from './banking';
 import { documentsRouter } from './documents';
 import { exportsRouter } from './exports';
@@ -30,6 +32,8 @@ export function buildApiRouter(): Router {
   api.use(requireAuth, requireMember, salesRouter);
   api.use(requireAuth, requireMember, arRouter);
   api.use(requireAuth, requireMember, apRouter);
+  api.use(requireAuth, requireMember, purchaseOrdersRouter);
+  api.use(requireAuth, requireMember, retainersRouter);
   api.use(requireAuth, requireMember, bankingRouter);
   api.use(requireAuth, requireMember, documentsRouter);
   api.use(requireAuth, requireMember, exportsRouter);

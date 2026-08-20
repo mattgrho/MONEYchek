@@ -2,6 +2,7 @@ import { and, eq, sql } from 'drizzle-orm';
 import type { Db, Tx } from '../db/client';
 import {
   accounts,
+  billApprovals,
   billLines,
   billPaymentAllocations,
   billPayments,
@@ -150,6 +151,68 @@ async function resolveBillLines(
 
 /* ---------------------------------- Bills -------------------------------- */
 
+/** In-transaction bill draft creation (also used by PO conversion). */
+export async function createBillDraftInTx(
+  tx: Tx,
+  ctx: OrgContext,
+  input: {
+    vendorId: string;
+    billDate: string;
+    dueDate?: string;
+    termsDays?: number;
+    vendorReference?: string;
+    memo?: string;
+    lines: BillLineInput[];
+    purchaseOrderId?: string | null;
+  },
+): Promise<{ id: string; number: string; approvalRequired: boolean }> {
+  const vendor = await assertVendor(tx, ctx.organizationId, input.vendorId);
+  const { resolved, total } = await resolveBillLines(tx, ctx.organizationId, input.lines);
+  const [purchSettings] = await tx
+    .select()
+    .from(purchasingSettings)
+    .where(eq(purchasingSettings.organizationId, ctx.organizationId))
+    .limit(1);
+  const threshold = purchSettings?.billApprovalThreshold ?? null;
+  const approvalRequired = threshold !== null && cmp(total, threshold) >= 0;
+  const termsDays = input.termsDays ?? vendor.termsDays ?? 30;
+  const number = await nextDocumentNumber(tx, ctx.organizationId, 'bill');
+  const [bill] = await tx
+    .insert(bills)
+    .values({
+      organizationId: ctx.organizationId,
+      number,
+      vendorId: input.vendorId,
+      vendorReference: input.vendorReference ?? null,
+      billDate: input.billDate,
+      dueDate: input.dueDate ?? addDaysISO(input.billDate, termsDays),
+      termsDays,
+      memo: input.memo ?? null,
+      total,
+      approvalStatus: approvalRequired ? 'pending' : 'not_required',
+      purchaseOrderId: input.purchaseOrderId ?? null,
+      submittedByUserId: ctx.userId,
+      submittedAt: new Date(),
+      createdByUserId: ctx.userId,
+    })
+    .returning({ id: bills.id, number: bills.number });
+  await tx.insert(billLines).values(
+    resolved.map((l, i) => ({
+      organizationId: ctx.organizationId,
+      billId: bill!.id,
+      lineNumber: i + 1,
+      accountId: l.accountId,
+      productId: l.productId,
+      description: l.description,
+      quantity: l.quantity,
+      unitCost: l.unitCost,
+      amount: l.amount,
+      billableCustomerId: l.billableCustomerId,
+    })),
+  );
+  return { id: bill!.id, number: bill!.number, approvalRequired };
+}
+
 export async function createBillDraft(
   db: Db,
   ctx: OrgContext,
@@ -163,63 +226,23 @@ export async function createBillDraft(
     lines: BillLineInput[];
   },
 ): Promise<{ id: string; number: string; approvalRequired: boolean }> {
-  return db.transaction(async (tx) => {
-    const vendor = await assertVendor(tx, ctx.organizationId, input.vendorId);
-    const { resolved, total } = await resolveBillLines(tx, ctx.organizationId, input.lines);
-    const [purchSettings] = await tx
-      .select()
-      .from(purchasingSettings)
-      .where(eq(purchasingSettings.organizationId, ctx.organizationId))
-      .limit(1);
-    const threshold = purchSettings?.billApprovalThreshold ?? null;
-    const approvalRequired = threshold !== null && cmp(total, threshold) >= 0;
-    const termsDays = input.termsDays ?? vendor.termsDays ?? 30;
-    const number = await nextDocumentNumber(tx, ctx.organizationId, 'bill');
-    const [bill] = await tx
-      .insert(bills)
-      .values({
-        organizationId: ctx.organizationId,
-        number,
-        vendorId: input.vendorId,
-        vendorReference: input.vendorReference ?? null,
-        billDate: input.billDate,
-        dueDate: input.dueDate ?? addDaysISO(input.billDate, termsDays),
-        termsDays,
-        memo: input.memo ?? null,
-        total,
-        approvalStatus: approvalRequired ? 'pending' : 'not_required',
-        submittedByUserId: ctx.userId,
-        submittedAt: new Date(),
-        createdByUserId: ctx.userId,
-      })
-      .returning({ id: bills.id, number: bills.number });
-    await tx.insert(billLines).values(
-      resolved.map((l, i) => ({
-        organizationId: ctx.organizationId,
-        billId: bill!.id,
-        lineNumber: i + 1,
-        accountId: l.accountId,
-        productId: l.productId,
-        description: l.description,
-        quantity: l.quantity,
-        unitCost: l.unitCost,
-        amount: l.amount,
-        billableCustomerId: l.billableCustomerId,
-      })),
-    );
-    return { id: bill!.id, number: bill!.number, approvalRequired };
-  });
+  return db.transaction((tx) => createBillDraftInTx(tx, ctx, input));
 }
 
-/** One-step bill approval with separation of duties. */
+/**
+ * Bill approval with separation of duties. One-step mode needs a single
+ * approver; two-step mode needs two distinct approvers — both different
+ * from the submitter — and the bill sits at partially_approved in between.
+ * Every decision is recorded immutably in bill_approvals.
+ */
 export async function decideBillApproval(
   db: Db,
   ctx: OrgContext,
   billId: string,
   input: { decision: 'approved' | 'rejected'; reason?: string },
   correlationId: string,
-): Promise<void> {
-  await db.transaction(async (tx) => {
+): Promise<{ approvalStatus: string }> {
+  return db.transaction(async (tx) => {
     const [bill] = await tx
       .select()
       .from(bills)
@@ -227,14 +250,18 @@ export async function decideBillApproval(
       .for('update')
       .limit(1);
     if (!bill) throw AppError.notFound('Bill not found');
-    if (bill.approvalStatus !== 'pending') {
-      throw AppError.conflict('NOT_PENDING', 'This bill is not awaiting approval');
-    }
     const [purchSettings] = await tx
       .select()
       .from(purchasingSettings)
       .where(eq(purchasingSettings.organizationId, ctx.organizationId))
       .limit(1);
+    const twoStep = purchSettings?.approvalMode === 'two_step';
+    const awaiting =
+      bill.approvalStatus === 'pending' ||
+      (twoStep && bill.approvalStatus === 'partially_approved');
+    if (!awaiting) {
+      throw AppError.conflict('NOT_PENDING', 'This bill is not awaiting approval');
+    }
     if (
       purchSettings?.separationOfDuties &&
       bill.createdByUserId &&
@@ -245,30 +272,66 @@ export async function decideBillApproval(
     if (input.decision === 'rejected' && !input.reason) {
       throw AppError.validation('Rejection requires a reason', { reason: ['Required'] });
     }
+
+    const priorApprovals = await tx
+      .select()
+      .from(billApprovals)
+      .where(and(eq(billApprovals.billId, billId), eq(billApprovals.decision, 'approved')))
+      .orderBy(billApprovals.step);
+    const activeApprovals =
+      bill.approvalStatus === 'partially_approved' ? priorApprovals.slice(-1) : [];
+    if (activeApprovals.some((a) => a.decidedByUserId === ctx.userId)) {
+      throw AppError.forbidden(
+        'Two-step approval requires a second, different approver for this bill',
+      );
+    }
+    const step = activeApprovals.length + 1;
+
+    await tx.insert(billApprovals).values({
+      organizationId: ctx.organizationId,
+      billId,
+      step,
+      decision: input.decision,
+      decidedByUserId: ctx.userId,
+      reason: input.reason ?? null,
+    });
+
+    let nextStatus: 'approved' | 'rejected' | 'partially_approved';
+    if (input.decision === 'rejected') {
+      nextStatus = 'rejected';
+    } else if (twoStep && step === 1) {
+      nextStatus = 'partially_approved';
+    } else {
+      nextStatus = 'approved';
+    }
     await tx
       .update(bills)
       .set(
-        input.decision === 'approved'
+        nextStatus === 'approved'
           ? { approvalStatus: 'approved', approvedByUserId: ctx.userId, approvedAt: new Date() }
-          : {
-              approvalStatus: 'rejected',
-              rejectedByUserId: ctx.userId,
-              rejectedAt: new Date(),
-              rejectionReason: input.reason ?? null,
-            },
+          : nextStatus === 'rejected'
+            ? {
+                approvalStatus: 'rejected',
+                rejectedByUserId: ctx.userId,
+                rejectedAt: new Date(),
+                rejectionReason: input.reason ?? null,
+              }
+            : { approvalStatus: 'partially_approved' },
       )
       .where(eq(bills.id, billId));
     await writeAuditEvent(tx, {
       organizationId: ctx.organizationId,
       actorUserId: ctx.userId,
       actorRole: ctx.roleKey,
-      action: `bill.${input.decision}`,
+      action:
+        nextStatus === 'partially_approved' ? 'bill.approved_step1' : `bill.${input.decision}`,
       entityType: 'bill',
       entityId: billId,
       reason: input.reason ?? null,
-      payload: { number: bill.number, total: roundMoney(bill.total) },
+      payload: { number: bill.number, total: roundMoney(bill.total), step, mode: twoStep ? 'two_step' : 'one_step' },
       correlationId,
     });
+    return { approvalStatus: nextStatus };
   });
 }
 
@@ -317,12 +380,18 @@ export async function postBill(
       if (bill.postingStatus !== 'draft') {
         throw AppError.conflict('NOT_DRAFT', 'This bill has already been posted');
       }
-      if (bill.approvalStatus === 'pending' || bill.approvalStatus === 'rejected') {
+      if (
+        bill.approvalStatus === 'pending' ||
+        bill.approvalStatus === 'partially_approved' ||
+        bill.approvalStatus === 'rejected'
+      ) {
         throw AppError.unprocessable(
           'APPROVAL_REQUIRED',
-          bill.approvalStatus === 'pending'
-            ? 'This bill is awaiting approval'
-            : 'This bill was rejected; edit and resubmit it',
+          bill.approvalStatus === 'rejected'
+            ? 'This bill was rejected; edit and resubmit it'
+            : bill.approvalStatus === 'partially_approved'
+              ? 'This bill still needs its second approval'
+              : 'This bill is awaiting approval',
         );
       }
       const lines = await tx

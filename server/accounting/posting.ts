@@ -31,8 +31,11 @@ const CONTROL_ACCOUNT_SOURCES: Record<string, readonly string[]> = {
     'write_off',
     'customer_refund',
     'deposit',
+    'payment_return',
+    'retainer_application',
     'opening_migration',
   ],
+  customer_retainers: ['retainer', 'retainer_application', 'opening_migration'],
   accounts_payable: ['bill', 'bill_payment', 'vendor_credit', 'vendor_refund', 'opening_migration'],
   undeposited_funds: ['customer_payment', 'sales_receipt', 'deposit', 'customer_refund'],
   inventory_asset: [

@@ -41,7 +41,8 @@ export interface SystemAccountDef {
     | 'cogsAccountId'
     | 'defaultIncomeAccountId'
     | 'defaultExpenseAccountId'
-    | 'badDebtAccountId';
+    | 'badDebtAccountId'
+    | 'customerRetainersAccountId';
 }
 
 /** Protected accounts every organization gets. Types are locked forever. */
@@ -85,6 +86,14 @@ export const SYSTEM_ACCOUNTS: SystemAccountDef[] = [
     category: 'liability',
     detailType: 'sales_tax_payable',
     settingsColumn: 'salesTaxPayableAccountId',
+  },
+  {
+    key: 'customer_retainers',
+    name: 'Customer Retainers',
+    number: '2300',
+    category: 'liability',
+    detailType: 'customer_retainers',
+    settingsColumn: 'customerRetainersAccountId',
   },
   {
     key: 'opening_balance_equity',

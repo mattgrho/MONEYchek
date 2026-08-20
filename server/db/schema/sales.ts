@@ -264,6 +264,12 @@ export const customerPayments = pgTable(
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedByUserId: uuid('voided_by_user_id').references(() => users.id),
     voidReason: text('void_reason'),
+    /** Set when the bank returned the payment (NSF); see returnCustomerPayment. */
+    returnedAt: timestamp('returned_at', { withTimezone: true }),
+    returnedDate: date('returned_date'),
+    returnedByUserId: uuid('returned_by_user_id').references(() => users.id),
+    returnedReason: text('returned_reason'),
+    returnJournalEntryId: uuid('return_journal_entry_id').references(() => journalEntries.id),
     version: integer('version').notNull().default(1),
     createdAt: createdAt(),
     updatedAt: updatedAt(),
@@ -549,5 +555,76 @@ export const customerRefunds = pgTable(
   (t) => [
     index('customer_refunds_source_idx').on(t.organizationId, t.sourceType, t.sourceId),
     index('customer_refunds_src_idx').on(t.sourceType, t.sourceId),
+  ],
+);
+
+/**
+ * Customer retainers: money received before work is billed, held in the
+ * protected Customer Retainers liability account. Receiving a retainer
+ * debits the chosen bank account and credits the liability; applying it to
+ * an invoice debits the liability and credits Accounts Receivable. History
+ * is append-only — an unapply is a reversing application row.
+ */
+export const customerRetainers = pgTable(
+  'customer_retainers',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    number: text('number').notNull(),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => customers.id),
+    postingStatus: text('posting_status', { enum: POSTING_STATUS }).notNull().default('draft'),
+    receivedDate: date('received_date').notNull(),
+    amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
+    depositToAccountId: uuid('deposit_to_account_id')
+      .notNull()
+      .references(() => accounts.id),
+    method: text('method'),
+    reference: text('reference'),
+    memo: text('memo'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    postedAt: timestamp('posted_at', { withTimezone: true }),
+    postedByUserId: uuid('posted_by_user_id').references(() => users.id),
+    voidedAt: timestamp('voided_at', { withTimezone: true }),
+    voidedByUserId: uuid('voided_by_user_id').references(() => users.id),
+    voidReason: text('void_reason'),
+    version: integer('version').notNull().default(1),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [
+    uniqueIndex('customer_retainers_org_number_uq').on(t.organizationId, t.number),
+    index('customer_retainers_org_customer_idx').on(t.organizationId, t.customerId),
+  ],
+);
+
+export const retainerApplications = pgTable(
+  'retainer_applications',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    retainerId: uuid('retainer_id')
+      .notNull()
+      .references(() => customerRetainers.id),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => invoices.id),
+    amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
+    effectiveDate: date('effective_date').notNull(),
+    reversalOfApplicationId: uuid('reversal_of_application_id'),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    createdByUserId: uuid('created_by_user_id').references(() => users.id),
+    createdAt: createdAt(),
+  },
+  (t) => [
+    index('retainer_apps_org_retainer_idx').on(t.organizationId, t.retainerId, t.effectiveDate),
+    index('retainer_apps_org_invoice_idx').on(t.organizationId, t.invoiceId, t.effectiveDate),
+    index('retainer_apps_retainer_idx').on(t.retainerId),
+    index('retainer_apps_invoice_idx').on(t.invoiceId),
   ],
 );

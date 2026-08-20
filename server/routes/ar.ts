@@ -71,6 +71,7 @@ interface PaymentListRow {
   reference: string | null;
   amount: string;
   deposit_to_name: string;
+  returned_date: string | null;
   unapplied: string;
 }
 interface CreditListRow {
@@ -121,6 +122,8 @@ arRouter.get(
                            WHERE ca.invoice_id = i.id), 0)
                - COALESCE((SELECT SUM(w.amount) FROM invoice_write_offs w
                            WHERE w.invoice_id = i.id AND w.reversal_of_write_off_id IS NULL), 0)
+               - COALESCE((SELECT SUM(ra.amount) FROM retainer_applications ra
+                           WHERE ra.invoice_id = i.id), 0)
              )::text AS open_balance
       FROM invoices i
       JOIN customers c ON c.id = i.customer_id
@@ -335,11 +338,13 @@ arRouter.get(
       SELECT p.id, p.number, p.customer_id, c.display_name AS customer_name,
              p.posting_status, p.payment_date::text AS payment_date, p.method,
              p.reference, p.amount::text, a.name AS deposit_to_name,
+             p.returned_date::text AS returned_date,
              (p.amount
                - COALESCE((SELECT SUM(pa.amount) FROM customer_payment_allocations pa
                            WHERE pa.payment_id = p.id), 0)
                - COALESCE((SELECT SUM(r.amount) FROM customer_refunds r
                            WHERE r.source_type = 'payment' AND r.source_id = p.id), 0)
+               - CASE WHEN p.returned_date IS NOT NULL THEN p.amount ELSE 0 END
              )::text AS unapplied
       FROM customer_payments p
       JOIN customers c ON c.id = p.customer_id
@@ -367,6 +372,7 @@ arRouter.get(
         reference: r.reference,
         amount: roundMoney(r.amount),
         depositToName: r.deposit_to_name,
+        returnedDate: r.returned_date,
         unapplied: r.posting_status === 'posted' ? roundMoney(r.unapplied) : '0.00',
       })),
     });
@@ -462,6 +468,27 @@ arRouter.post(
     const body = parseBody(req, z.object({ effectiveDate: DateString, idempotencyKey: IdemKey }));
     await unapplyPaymentAllocation(getDb(), ctx, id, body, req.correlationId);
     res.json({ ok: true });
+  }),
+);
+
+arRouter.post(
+  '/payments/:id/return',
+  requirePermission('customer_payments.void'),
+  postingLimit,
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const { id } = parseParams(req, IdParam);
+    const body = parseBody(
+      req,
+      z.object({
+        returnDate: DateString,
+        reason: z.string().min(3).max(500),
+        idempotencyKey: IdemKey,
+      }),
+    );
+    const { returnCustomerPayment } = await import('../services/payments');
+    const result = await returnCustomerPayment(getDb(), ctx, id, body, req.correlationId);
+    res.json(result);
   }),
 );
 

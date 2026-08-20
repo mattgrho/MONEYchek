@@ -31,6 +31,9 @@ export async function paymentUnapplied(tx: Tx, paymentId: string, asOf?: string)
       - COALESCE((SELECT SUM(r.amount) FROM customer_refunds r
                   WHERE r.source_type = 'payment' AND r.source_id = p.id
                   ${asOf ? sql`AND r.refund_date <= ${asOf}::date` : sql``}), 0)
+      - CASE WHEN p.returned_date IS NOT NULL
+                  ${asOf ? sql`AND p.returned_date <= ${asOf}::date` : sql``}
+             THEN p.amount ELSE 0 END
       AS unapplied
     FROM customer_payments p WHERE p.id = ${paymentId}
   `);
@@ -825,6 +828,12 @@ export async function voidCustomerPayment(
       if (!payment || payment.postingStatus !== 'posted' || !payment.journalEntryId) {
         throw AppError.notFound('Posted payment not found');
       }
+      if (payment.returnedAt) {
+        throw AppError.conflict(
+          'ALREADY_RETURNED',
+          'This payment was returned by the bank; the return entry already offsets it',
+        );
+      }
       const unapplied = await paymentUnapplied(tx, paymentId);
       if (cmp(unapplied, payment.amount) !== 0) {
         throw AppError.unprocessable(
@@ -879,6 +888,162 @@ export async function voidCustomerPayment(
         })
         .where(eq(customerPayments.id, paymentId));
       return { reversalEntryId: reversal.id };
+    },
+  );
+  return result;
+}
+
+/**
+ * NSF / returned payment. The bank bounced a customer payment after it was
+ * recorded (and possibly deposited). This:
+ *  1. reverses every active allocation (append-only reversing rows dated the
+ *     return date), reopening the invoices it paid;
+ *  2. posts DR Accounts Receivable / CR the account that actually holds the
+ *     funds (the deposit's bank account when the payment was deposited,
+ *     otherwise the payment's original deposit-to account);
+ *  3. marks the payment returned so it never offers credit again.
+ * The original payment entry and its history remain untouched. Any NSF fee
+ * charged to the customer is a normal new invoice, not part of this command.
+ */
+export async function returnCustomerPayment(
+  db: Db,
+  ctx: OrgContext,
+  paymentId: string,
+  input: { returnDate: string; reason: string; idempotencyKey: string },
+  correlationId: string,
+): Promise<{ returnJournalEntryId: string }> {
+  const { result } = await runFinancialCommand(
+    db,
+    {
+      organizationId: ctx.organizationId,
+      idempotencyKey: input.idempotencyKey,
+      commandType: 'customer_payment.return',
+      payload: { paymentId, returnDate: input.returnDate, reason: input.reason },
+      actorUserId: ctx.userId,
+    },
+    async (tx) => {
+      const [payment] = await tx
+        .select()
+        .from(customerPayments)
+        .where(
+          and(
+            eq(customerPayments.id, paymentId),
+            eq(customerPayments.organizationId, ctx.organizationId),
+          ),
+        )
+        .for('update')
+        .limit(1);
+      if (!payment || payment.postingStatus !== 'posted') {
+        throw AppError.notFound('Posted payment not found');
+      }
+      if (payment.returnedAt) {
+        throw AppError.conflict('ALREADY_RETURNED', 'This payment was already returned');
+      }
+      if (input.returnDate < payment.paymentDate) {
+        throw AppError.validation('The return date cannot be before the payment date');
+      }
+      const refunded = await tx
+        .select({ id: customerRefunds.id })
+        .from(customerRefunds)
+        .where(
+          and(
+            eq(customerRefunds.sourceType, 'payment'),
+            eq(customerRefunds.sourceId, paymentId),
+          ),
+        )
+        .limit(1);
+      if (refunded[0]) {
+        throw AppError.conflict(
+          'REFUND_EXISTS',
+          'Part of this payment was refunded; a bank return can no longer be recorded against it — correct with a manual journal reviewed by your accountant',
+        );
+      }
+
+      // Where did the money actually land? If the payment was swept into a
+      // posted deposit, the bank return hits that deposit's bank account.
+      const [component] = await tx
+        .select({ bankAccountId: deposits.bankAccountId })
+        .from(depositComponents)
+        .innerJoin(deposits, eq(depositComponents.depositId, deposits.id))
+        .where(
+          and(
+            eq(depositComponents.organizationId, ctx.organizationId),
+            eq(depositComponents.sourceType, 'customer_payment'),
+            eq(depositComponents.sourceId, paymentId),
+            eq(deposits.postingStatus, 'posted'),
+          ),
+        )
+        .limit(1);
+      const creditAccountId = component?.bankAccountId ?? payment.depositToAccountId;
+
+      // Reverse every active allocation so the invoices reopen as of the
+      // return date. Active = a positive row not already reversed.
+      const rows = await tx
+        .select()
+        .from(customerPaymentAllocations)
+        .where(eq(customerPaymentAllocations.paymentId, paymentId));
+      const reversedIds = new Set(
+        rows.map((r) => r.reversalOfAllocationId).filter((v): v is string => v !== null),
+      );
+      const active = rows.filter(
+        (r) => r.reversalOfAllocationId === null && !reversedIds.has(r.id) && cmp(r.amount, '0') > 0,
+      );
+      for (const alloc of active) {
+        await tx.insert(customerPaymentAllocations).values({
+          organizationId: ctx.organizationId,
+          paymentId,
+          invoiceId: alloc.invoiceId,
+          amount: roundMoney(sub('0', alloc.amount)),
+          effectiveDate: input.returnDate,
+          reversalOfAllocationId: alloc.id,
+          createdByUserId: ctx.userId,
+        });
+      }
+
+      const arId = await getSystemAccountId(tx, ctx.organizationId, 'accounts_receivable');
+      const entry = await postEntry(tx, {
+        organizationId: ctx.organizationId,
+        actorUserId: ctx.userId,
+        actorRole: ctx.roleKey,
+        sourceType: 'payment_return',
+        sourceId: paymentId,
+        postingDate: input.returnDate,
+        memo: `Returned payment ${payment.number} (NSF)`,
+        correlationId,
+        auditAction: 'customer_payment.returned',
+        auditPayload: {
+          number: payment.number,
+          amount: roundMoney(payment.amount),
+          reason: input.reason,
+          allocationsReversed: active.length,
+        },
+        lines: [
+          {
+            accountId: arId,
+            debit: payment.amount,
+            partyType: 'customer',
+            partyId: payment.customerId,
+            memo: `Returned payment ${payment.number}`,
+          },
+          {
+            accountId: creditAccountId,
+            credit: payment.amount,
+            memo: `Returned payment ${payment.number}`,
+          },
+        ],
+      });
+      await tx
+        .update(customerPayments)
+        .set({
+          returnedAt: new Date(),
+          returnedDate: input.returnDate,
+          returnedByUserId: ctx.userId,
+          returnedReason: input.reason,
+          returnJournalEntryId: entry.id,
+          updatedAt: new Date(),
+        })
+        .where(eq(customerPayments.id, paymentId));
+      return { returnJournalEntryId: entry.id };
     },
   );
   return result;

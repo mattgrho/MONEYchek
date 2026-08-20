@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { and, asc, desc, eq, sql } from 'drizzle-orm';
 import { getDb } from '../db/client';
 import {
+  billApprovals,
   billLines,
   billPaymentAllocations,
   billPayments,
@@ -10,6 +11,7 @@ import {
   companyProfiles,
   expenseLines,
   expenses,
+  users,
   vendors,
 } from '../db/schema/index';
 import { orgCtx, requirePermission } from '../middleware/auth';
@@ -239,6 +241,20 @@ apRouter.get(
       .from(billPaymentAllocations)
       .innerJoin(billPayments, eq(billPaymentAllocations.billPaymentId, billPayments.id))
       .where(eq(billPaymentAllocations.billId, id));
+    const approvals = await db
+      .select({
+        id: billApprovals.id,
+        step: billApprovals.step,
+        decision: billApprovals.decision,
+        decidedByUserId: billApprovals.decidedByUserId,
+        decidedByName: users.name,
+        decidedAt: billApprovals.decidedAt,
+        reason: billApprovals.reason,
+      })
+      .from(billApprovals)
+      .leftJoin(users, eq(billApprovals.decidedByUserId, users.id))
+      .where(eq(billApprovals.billId, id))
+      .orderBy(asc(billApprovals.decidedAt));
     const { roundMoney } = await import('@shared/money');
     const openBalance =
       bill.postingStatus === 'posted'
@@ -249,6 +265,7 @@ apRouter.get(
       total: roundMoney(bill.total),
       lines: lines.map((l) => ({ ...l, amount: roundMoney(l.amount) })),
       paymentAllocations: allocations.map((a) => ({ ...a, amount: roundMoney(a.amount) })),
+      approvals,
       openBalance,
     });
   }),
@@ -271,8 +288,14 @@ apRouter.post(
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
     const { id } = parseParams(req, IdParam);
-    await decideBillApproval(getDb(), ctx, id, { decision: 'approved' }, req.correlationId);
-    res.json({ ok: true });
+    const result = await decideBillApproval(
+      getDb(),
+      ctx,
+      id,
+      { decision: 'approved' },
+      req.correlationId,
+    );
+    res.json({ ok: true, ...result });
   }),
 );
 

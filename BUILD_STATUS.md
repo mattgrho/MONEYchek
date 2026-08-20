@@ -45,9 +45,17 @@ completed work.
       endpoint surfaced in the Periods page, 10k-entry performance seed with
       EXPLAIN review and the resulting 0004_perf_indexes migration
       (docs/PERFORMANCE.md).
-- [ ] Phases 8–10 — Gated extensions: NOT started (inventory UI, tax center,
-      projects/time, POs, budgets/recurring, OFX/QFX, XLSX, cash-basis, SoCF,
-      retainers, NSF flows, payroll import). Navigation for these does not exist.
+- [x] Gated extensions A — purchase orders with partial conversion + branded
+      PO PDFs, configurable one/two-step bill approvals (threshold, SoD,
+      distinct approvers, immutable bill_approvals history), customer
+      retainers (protected Customer Retainers liability, apply/unapply with
+      append-only rows, AR tie-outs asserted), NSF/returned payments
+      (allocation reversal, deposit-aware bank credit, aging exclusion).
+      23 integration tests. Migrations 0005 + 0006 (incl. role backfill and
+      append-only triggers).
+- [ ] Phases 8+ — Remaining gated extensions: NOT started (inventory UI, tax
+      center, projects/time, budgets/recurring, OFX/QFX, XLSX, cash-basis,
+      SoCF, payroll import). Navigation for these does not exist.
 
 Label claimed: **Prototype Core source-complete** (fresh clone → npm ci →
 migrate TEST_DATABASE_URL → verify:release passes with test-only adapters).
@@ -88,10 +96,8 @@ in this build environment; see External prerequisites).
 
 ## Next actions (in order)
 
-1. Two-step approvals, purchase orders with conversion, customer retainers,
-   NSF/returned-payment workflows (gated extensions A).
-2. Inventory UI gate (subledger already complete + tested).
-3. Manual sales-tax center (agencies/components/liability report) on the
+1. Inventory UI gate (subledger already complete + tested).
+2. Manual sales-tax center (agencies/components/liability report) on the
    existing tax_rates schema.
-4. Email outbox worker behind a real provider config; recurring templates
+3. Email outbox worker behind a real provider config; recurring templates
    via Scheduled Deployment.

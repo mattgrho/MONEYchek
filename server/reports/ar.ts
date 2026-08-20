@@ -64,6 +64,8 @@ export async function arAging(
              - COALESCE((SELECT SUM(w.amount) FROM invoice_write_offs w
                          WHERE w.invoice_id = i.id AND w.reversal_of_write_off_id IS NULL
                            AND w.write_off_date <= ${asOf}::date), 0)
+             - COALESCE((SELECT SUM(ra.amount) FROM retainer_applications ra
+                         WHERE ra.invoice_id = i.id AND ra.effective_date <= ${asOf}::date), 0)
            )::text AS open_balance,
            (${asOf}::date - i.due_date) AS days_overdue
     FROM invoices i
@@ -82,6 +84,8 @@ export async function arAging(
              - COALESCE((SELECT SUM(r.amount) FROM customer_refunds r
                          WHERE r.source_type = 'payment' AND r.source_id = p.id
                            AND r.refund_date <= ${asOf}::date), 0)
+             - CASE WHEN p.returned_date IS NOT NULL AND p.returned_date <= ${asOf}::date
+                    THEN p.amount ELSE 0 END
            )::text AS unapplied
     FROM customer_payments p
     JOIN customers c ON c.id = p.customer_id
