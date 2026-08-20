@@ -19,10 +19,14 @@ export default defineConfig({
       'client/src/**/*.test.tsx',
     ],
     environment: 'node',
-    environmentMatchGlobs: [['client/src/**', 'jsdom']],
     globalSetup: ['tests/global-setup.ts'],
+    // Integration files share one test database (each truncates in
+    // beforeAll), so they must run strictly one at a time. Vitest 4 moved
+    // the old poolOptions.forks.singleFork behavior to these top-level
+    // options.
     pool: 'forks',
-    poolOptions: { forks: { singleFork: true } },
+    fileParallelism: false,
+    maxWorkers: 1,
     testTimeout: 30000,
     hookTimeout: 60000,
   },
