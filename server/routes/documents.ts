@@ -232,11 +232,7 @@ documentsRouter.get(
       .where(and(eq(purchaseOrders.id, id), eq(purchaseOrders.organizationId, ctx.organizationId)))
       .limit(1);
     if (!po) throw AppError.notFound('Purchase order not found');
-    const [vendor] = await db
-      .select()
-      .from(vendors)
-      .where(eq(vendors.id, po.vendorId))
-      .limit(1);
+    const [vendor] = await db.select().from(vendors).where(eq(vendors.id, po.vendorId)).limit(1);
     const lines = await db
       .select()
       .from(purchaseOrderLines)

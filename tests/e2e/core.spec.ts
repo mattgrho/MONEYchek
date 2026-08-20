@@ -124,6 +124,38 @@ test('reports render with balanced totals', async ({ page }) => {
   await expect(page.getByText(/Total assets/i).first()).toBeVisible();
 });
 
+test('purchase orders and retainers pages work end to end', async ({ page }) => {
+  watchConsole(page);
+  // A vendor is needed before a PO can exist.
+  await page.goto('/expenses/vendors');
+  await page.getByRole('button', { name: 'New vendor' }).first().click();
+  await page.locator('#new-vendor-display-name').fill('Summit Supply Co');
+  await page.getByRole('button', { name: 'Create vendor' }).click();
+  await expect(page.getByText('Summit Supply Co').first()).toBeVisible({ timeout: 10_000 });
+
+  // Purchase order: create through the dialog, open it, reach convertibility.
+  await page.goto('/expenses/purchase-orders');
+  await expect(page.getByRole('heading', { name: /purchase order/i }).first()).toBeVisible();
+  await expectNoAxeViolations(page);
+  await page.getByRole('button', { name: 'New purchase order' }).first().click();
+  await page.locator('#po-vendor').selectOption({ label: 'Summit Supply Co' });
+  await page.getByLabel('Account for line 1').selectOption({ index: 1 });
+  await page.getByLabel('Description for line 1').fill('Site materials');
+  await page.getByLabel('Quantity for line 1').fill('3');
+  await page.getByLabel('Unit cost for line 1').fill('40');
+  await page.getByRole('button', { name: 'Create purchase order' }).click();
+  await expect(page.getByText(/PO-\d+/).first()).toBeVisible({ timeout: 10_000 });
+  await page.getByRole('button', { name: 'Open PO' }).click();
+  await expect(page.getByRole('button', { name: /Convert to bill/ })).toBeVisible({
+    timeout: 10_000,
+  });
+
+  // Retainers page renders and passes axe.
+  await page.goto('/sales/retainers');
+  await expect(page.getByRole('heading', { name: /retainer/i }).first()).toBeVisible();
+  await expectNoAxeViolations(page);
+});
+
 test('critical pages pass axe scans', async ({ page }) => {
   await page.goto('/');
   await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();

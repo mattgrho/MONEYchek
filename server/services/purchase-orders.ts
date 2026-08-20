@@ -176,7 +176,9 @@ export async function updatePurchaseOrderDraft(
     const [po] = await tx
       .select()
       .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)))
+      .where(
+        and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)),
+      )
       .for('update')
       .limit(1);
     if (!po) throw AppError.notFound('Purchase order not found');
@@ -213,8 +215,7 @@ export async function updatePurchaseOrderDraft(
         expectedDate: input.expectedDate === undefined ? po.expectedDate : input.expectedDate,
         shipTo: input.shipTo === undefined ? po.shipTo : input.shipTo,
         memo: input.memo === undefined ? po.memo : input.memo,
-        vendorMessage:
-          input.vendorMessage === undefined ? po.vendorMessage : input.vendorMessage,
+        vendorMessage: input.vendorMessage === undefined ? po.vendorMessage : input.vendorMessage,
         total,
         version: po.version + 1,
         updatedAt: new Date(),
@@ -243,7 +244,9 @@ export async function transitionPurchaseOrder(
     const [po] = await tx
       .select()
       .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)))
+      .where(
+        and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)),
+      )
       .for('update')
       .limit(1);
     if (!po) throw AppError.notFound('Purchase order not found');
@@ -285,7 +288,9 @@ export async function convertPurchaseOrderToBill(
     const [po] = await tx
       .select()
       .from(purchaseOrders)
-      .where(and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)))
+      .where(
+        and(eq(purchaseOrders.id, poId), eq(purchaseOrders.organizationId, ctx.organizationId)),
+      )
       .for('update')
       .limit(1);
     if (!po) throw AppError.notFound('Purchase order not found');

@@ -83,8 +83,9 @@ beforeAll(async () => {
   ufId = accounts.body.items.find(
     (a: { systemKey: string | null }) => a.systemKey === 'undeposited_funds',
   ).id;
-  suppliesId = accounts.body.items.find((a: { category: string; systemKey: string | null }) =>
-    a.category === 'expense' && a.systemKey === null,
+  suppliesId = accounts.body.items.find(
+    (a: { category: string; systemKey: string | null }) =>
+      a.category === 'expense' && a.systemKey === null,
   ).id;
 
   const customer = await post('/api/v1/customers', { displayName: 'Retainer Customer' });
@@ -318,9 +319,7 @@ describe('returned (NSF) customer payments', () => {
     const register = await get(
       `/api/v1/accounts/${checkingId}/register?startDate=2026-05-10&endDate=2026-05-10`,
     );
-    const returnRow = register.body.rows.find(
-      (r: { entryId: string }) => r.entryId === entryId,
-    );
+    const returnRow = register.body.rows.find((r: { entryId: string }) => r.entryId === entryId);
     expect(returnRow).toBeTruthy();
     expect(returnRow.credit).toBe('500.00');
 

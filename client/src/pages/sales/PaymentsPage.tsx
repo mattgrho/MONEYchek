@@ -35,6 +35,7 @@ interface PaymentListItem {
   amount: string;
   depositToName: string | null;
   unapplied: string;
+  returnedDate: string | null;
 }
 
 interface PaymentAllocation {
@@ -184,6 +185,11 @@ export function PaymentsPage({ me }: { me: Me }) {
   const [refundAmount, setRefundAmount] = useState('');
   const [refundDate, setRefundDate] = useState(todayISO());
   const [refundBankAccountId, setRefundBankAccountId] = useState('');
+
+  // ----- bank-return dialog state -----
+  const [returnTarget, setReturnTarget] = useState<PaymentListItem | null>(null);
+  const [returnDate, setReturnDate] = useState(todayISO());
+  const [returnReason, setReturnReason] = useState('');
 
   const payments = usePagedList<PaymentListItem>(['payments'], '/api/v1/payments');
   const customers = useQuery({
@@ -388,6 +394,22 @@ export function PaymentsPage({ me }: { me: Me }) {
     },
   });
 
+  const recordReturn = useMutation({
+    mutationFn: (input: { id: string; returnDate: string; reason: string }) =>
+      api.post<{ ok: boolean }>(`/api/v1/payments/${input.id}/return`, {
+        returnDate: input.returnDate,
+        reason: input.reason,
+        idempotencyKey: crypto.randomUUID(),
+      }),
+    onSuccess: () => {
+      toast('success', 'Bank return recorded');
+      void qc.invalidateQueries({ queryKey: ['payments'] });
+      void qc.invalidateQueries({ queryKey: ['payment'] });
+      void qc.invalidateQueries({ queryKey: ['invoices'] });
+      setReturnTarget(null);
+    },
+  });
+
   if (payments.isLoading) return <Spinner label="Loading payments" />;
   if (payments.error) return <ErrorNote error={payments.error} />;
 
@@ -400,6 +422,11 @@ export function PaymentsPage({ me }: { me: Me }) {
     refundBankAccountId !== '' &&
     refundAmountCents > 0n &&
     refundAmountCents <= refundMaxCents;
+  const canSubmitReturn =
+    returnTarget !== null &&
+    returnDate !== '' &&
+    returnDate >= returnTarget.paymentDate &&
+    returnReason.trim().length >= 3;
 
   // Allocations that were reversed (unapplied) or are themselves reversals are inactive.
   const detailAllocations = expandedPayment.data?.allocations ?? [];
@@ -512,7 +539,10 @@ export function PaymentsPage({ me }: { me: Me }) {
                       )}
                     </TDMoney>
                     <TD>
-                      <Badge tone={STATUS_TONES[p.postingStatus]}>{p.postingStatus}</Badge>
+                      <span className="inline-flex items-center gap-1.5">
+                        <Badge tone={STATUS_TONES[p.postingStatus]}>{p.postingStatus}</Badge>
+                        {p.returnedDate !== null ? <Badge tone="danger">Returned</Badge> : null}
+                      </span>
                     </TD>
                     <TD>
                       {canCreate && p.postingStatus === 'posted' && unappliedCents > 0n ? (
@@ -545,20 +575,38 @@ export function PaymentsPage({ me }: { me: Me }) {
                           <div className="space-y-3">
                             <div className="flex items-center justify-between gap-3">
                               <h4 className="text-sm font-semibold">Invoice allocations</h4>
-                              {canVoid && p.postingStatus === 'posted' ? (
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-destructive"
-                                  onClick={() => {
-                                    voidPayment.reset();
-                                    setVoidTarget(p);
-                                    setVoidReason('');
-                                  }}
-                                >
-                                  Void payment
-                                </Button>
-                              ) : null}
+                              <div className="flex items-center gap-2">
+                                {canVoid &&
+                                p.postingStatus === 'posted' &&
+                                p.returnedDate === null ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      recordReturn.reset();
+                                      setReturnTarget(p);
+                                      setReturnDate(todayISO());
+                                      setReturnReason('');
+                                    }}
+                                  >
+                                    Record bank return…
+                                  </Button>
+                                ) : null}
+                                {canVoid && p.postingStatus === 'posted' ? (
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    className="text-destructive"
+                                    onClick={() => {
+                                      voidPayment.reset();
+                                      setVoidTarget(p);
+                                      setVoidReason('');
+                                    }}
+                                  >
+                                    Void payment
+                                  </Button>
+                                ) : null}
+                              </div>
                             </div>
                             {detailAllocations.length === 0 ? (
                               <p className="text-sm text-muted-foreground">
@@ -989,6 +1037,78 @@ export function PaymentsPage({ me }: { me: Me }) {
           {refund.error ? <ApiErrorNote error={refund.error} /> : null}
           <Button type="submit" className="w-full" disabled={!canRefund} loading={refund.isPending}>
             Record refund
+          </Button>
+        </form>
+      </Dialog>
+
+      {/* ----- bank return dialog ----- */}
+      <Dialog
+        open={returnTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setReturnTarget(null);
+        }}
+        title="Record bank return"
+        description={
+          returnTarget
+            ? `Records that the bank returned payment ${returnTarget.number} of ${formatMoney(returnTarget.amount, currency)} (e.g. NSF / bounced check).`
+            : undefined
+        }
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!returnTarget || !canSubmitReturn) return;
+            recordReturn.mutate({
+              id: returnTarget.id,
+              returnDate,
+              reason: returnReason.trim(),
+            });
+          }}
+        >
+          <p className="text-sm text-muted-foreground">
+            Reversing the allocations reopens the invoices this payment paid, and the bank account
+            is credited. Any NSF fee you charge the customer is a separate invoice.
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="return-date">Return date</Label>
+            <Input
+              id="return-date"
+              type="date"
+              required
+              min={returnTarget?.paymentDate}
+              value={returnDate}
+              onChange={(e) => setReturnDate(e.target.value)}
+            />
+            {returnTarget && returnDate !== '' && returnDate < returnTarget.paymentDate ? (
+              <p className="text-xs text-destructive">
+                The return date cannot be before the payment date (
+                {formatDate(returnTarget.paymentDate)}).
+              </p>
+            ) : null}
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="return-reason">Reason</Label>
+            <Textarea
+              id="return-reason"
+              required
+              minLength={3}
+              value={returnReason}
+              onChange={(e) => setReturnReason(e.target.value)}
+            />
+            {returnReason.trim() !== '' && returnReason.trim().length < 3 ? (
+              <p className="text-xs text-destructive">The reason must be at least 3 characters.</p>
+            ) : null}
+          </div>
+          {recordReturn.error ? <ApiErrorNote error={recordReturn.error} /> : null}
+          <Button
+            type="submit"
+            variant="destructive"
+            className="w-full"
+            disabled={!canSubmitReturn}
+            loading={recordReturn.isPending}
+          >
+            Record bank return
           </Button>
         </form>
       </Dialog>

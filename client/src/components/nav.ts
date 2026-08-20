@@ -45,6 +45,7 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Sales receipts', to: '/sales/receipts', permission: 'sales_receipts.view' },
       { label: 'Credit memos', to: '/sales/credits', permission: 'credit_memos.view' },
       { label: 'Deposits', to: '/sales/deposits', permission: 'deposits.view' },
+      { label: 'Retainers', to: '/sales/retainers', permission: 'retainers.view' },
       { label: 'Products & services', to: '/sales/products', permission: 'products.view' },
     ],
   },
@@ -53,6 +54,11 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: ShoppingCart,
     items: [
       { label: 'Vendors', to: '/expenses/vendors', permission: 'vendors.view' },
+      {
+        label: 'Purchase orders',
+        to: '/expenses/purchase-orders',
+        permission: 'purchase_orders.view',
+      },
       { label: 'Bills', to: '/expenses/bills', permission: 'bills.view' },
       { label: 'Expenses', to: '/expenses/expenses', permission: 'expenses.view' },
       { label: 'Bill payments', to: '/expenses/bill-payments', permission: 'bill_payments.view' },

@@ -27,7 +27,10 @@ import { PaymentsPage } from '@/pages/sales/PaymentsPage';
 import { CreditMemosPage } from '@/pages/sales/CreditMemosPage';
 import { DepositsPage } from '@/pages/sales/DepositsPage';
 import { SalesReceiptsPage } from '@/pages/sales/SalesReceiptsPage';
+import { RetainersPage } from '@/pages/sales/RetainersPage';
 import { VendorsPage } from '@/pages/expenses/VendorsPage';
+import { PurchaseOrdersPage } from '@/pages/expenses/PurchaseOrdersPage';
+import { PurchaseOrderDetailPage } from '@/pages/expenses/PurchaseOrderDetailPage';
 import { ExpensesPage } from '@/pages/expenses/ExpensesPage';
 import { BillsPage } from '@/pages/expenses/BillsPage';
 import { BillDetailPage } from '@/pages/expenses/BillDetailPage';
@@ -95,7 +98,10 @@ function Gate() {
         <Route path="/sales/credits" element={<CreditMemosPage me={me} />} />
         <Route path="/sales/deposits" element={<DepositsPage me={me} />} />
         <Route path="/sales/receipts" element={<SalesReceiptsPage me={me} />} />
+        <Route path="/sales/retainers" element={<RetainersPage me={me} />} />
         <Route path="/expenses/vendors" element={<VendorsPage me={me} />} />
+        <Route path="/expenses/purchase-orders" element={<PurchaseOrdersPage me={me} />} />
+        <Route path="/expenses/purchase-orders/:id" element={<PurchaseOrderDetailPage me={me} />} />
         <Route path="/expenses/bills" element={<BillsPage me={me} />} />
         <Route path="/expenses/bills/:id" element={<BillDetailPage me={me} />} />
         <Route path="/expenses/expenses" element={<ExpensesPage me={me} />} />

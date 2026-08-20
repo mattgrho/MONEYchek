@@ -25,7 +25,7 @@ import {
 import { Table, TBody, TD, TDMoney, TFoot, TH, THead, TR } from '@/components/ui/table';
 
 type PostingStatus = 'draft' | 'posted' | 'voided' | 'reversed';
-type ApprovalStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
+type ApprovalStatus = 'not_required' | 'pending' | 'partially_approved' | 'approved' | 'rejected';
 
 interface BillLine {
   id: string;
@@ -36,6 +36,16 @@ interface BillLine {
   quantity: string | null;
   unitCost: string | null;
   amount: string;
+}
+
+interface BillApproval {
+  id: string;
+  step: number;
+  decision: 'approved' | 'rejected';
+  decidedByUserId: string;
+  decidedByName: string | null;
+  decidedAt: string;
+  reason: string | null;
 }
 
 interface BillPaymentAllocation {
@@ -62,6 +72,7 @@ interface BillDetail {
   openBalance: string;
   lines: BillLine[];
   paymentAllocations: BillPaymentAllocation[];
+  approvals: BillApproval[];
 }
 
 interface Vendor {
@@ -166,6 +177,7 @@ function approvalBadge(status: ApprovalStatus): {
   tone: 'warning' | 'success' | 'danger';
 } | null {
   if (status === 'pending') return { label: 'Approval pending', tone: 'warning' };
+  if (status === 'partially_approved') return { label: '1 of 2 approvals', tone: 'warning' };
   if (status === 'approved') return { label: 'Approved', tone: 'success' };
   if (status === 'rejected') return { label: 'Rejected', tone: 'danger' };
   return null;
@@ -225,9 +237,15 @@ export function BillDetailPage({ me }: { me: Me }) {
   }
 
   const approveBill = useMutation({
-    mutationFn: () => api.post<{ ok: boolean }>(`/api/v1/bills/${id}/approve`, {}),
-    onSuccess: () => {
-      toast('success', 'Bill approved');
+    mutationFn: () =>
+      api.post<{ ok: boolean; approvalStatus: ApprovalStatus }>(`/api/v1/bills/${id}/approve`, {}),
+    onSuccess: (data) => {
+      toast(
+        'success',
+        data.approvalStatus === 'partially_approved'
+          ? 'Approval recorded — a second approver is required'
+          : 'Bill approved',
+      );
       invalidateBill();
     },
   });
@@ -312,7 +330,8 @@ export function BillDetailPage({ me }: { me: Me }) {
 
   const isDraft = detail.postingStatus === 'draft';
   const isPosted = detail.postingStatus === 'posted';
-  const isPending = detail.approvalStatus === 'pending';
+  const awaitingApproval =
+    detail.approvalStatus === 'pending' || detail.approvalStatus === 'partially_approved';
   const isRejected = detail.approvalStatus === 'rejected';
   const postable =
     isDraft && (detail.approvalStatus === 'approved' || detail.approvalStatus === 'not_required');
@@ -363,7 +382,7 @@ export function BillDetailPage({ me }: { me: Me }) {
         description={`From ${vendorName}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
-            {isDraft && isPending && canApprove ? (
+            {isDraft && awaitingApproval && canApprove ? (
               <>
                 <Button loading={approveBill.isPending} onClick={() => approveBill.mutate()}>
                   Approve
@@ -393,8 +412,8 @@ export function BillDetailPage({ me }: { me: Me }) {
           <ApiErrorNote error={approveBill.error} />
           {approveForbidden ? (
             <p className="text-sm text-muted-foreground">
-              Separation of duties: the person who created a bill cannot approve it. Ask another
-              approver to review this bill.
+              Separation of duties: the person who created a bill cannot approve it, and the same
+              approver cannot approve it twice. Ask another approver to review this bill.
             </p>
           ) : null}
         </div>
@@ -508,6 +527,44 @@ export function BillDetailPage({ me }: { me: Me }) {
           </TR>
         </TFoot>
       </Table>
+
+      {detail.approvals.length > 0 ? (
+        <Card className="mt-5">
+          <CardHeader>
+            <CardTitle>Approval history</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <Table>
+              <THead>
+                <TR>
+                  <TH className="w-16">Step</TH>
+                  <TH>Decision</TH>
+                  <TH>Decided by</TH>
+                  <TH>Date</TH>
+                  <TH>Reason</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {detail.approvals.map((a) => (
+                  <TR key={a.id}>
+                    <TD className="text-muted-foreground">{a.step}</TD>
+                    <TD>
+                      {a.decision === 'approved' ? (
+                        <Badge tone="success">Approved</Badge>
+                      ) : (
+                        <Badge tone="danger">Rejected</Badge>
+                      )}
+                    </TD>
+                    <TD>{a.decidedByName ?? '—'}</TD>
+                    <TD className="text-muted-foreground">{formatDate(a.decidedAt)}</TD>
+                    <TD>{a.reason !== null && a.reason !== '' ? a.reason : '—'}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          </CardContent>
+        </Card>
+      ) : null}
 
       <Card className="mt-5">
         <CardHeader>

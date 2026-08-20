@@ -31,7 +31,10 @@ async function retainerLiabilityAccountId(tx: Tx, organizationId: string): Promi
     .select({ id: accounts.id })
     .from(accounts)
     .where(
-      and(eq(accounts.organizationId, organizationId), eq(accounts.systemKey, 'customer_retainers')),
+      and(
+        eq(accounts.organizationId, organizationId),
+        eq(accounts.systemKey, 'customer_retainers'),
+      ),
     )
     .limit(1);
   if (row) return row.id;
@@ -231,7 +234,10 @@ export async function applyRetainer(
             'Retainers can only be applied to the same customer’s invoices',
           );
         }
-        if (input.effectiveDate < invoice.invoiceDate || input.effectiveDate < retainer.receivedDate) {
+        if (
+          input.effectiveDate < invoice.invoiceDate ||
+          input.effectiveDate < retainer.receivedDate
+        ) {
           throw AppError.validation(
             'The application date cannot be before the invoice or retainer date',
           );

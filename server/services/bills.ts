@@ -328,7 +328,12 @@ export async function decideBillApproval(
       entityType: 'bill',
       entityId: billId,
       reason: input.reason ?? null,
-      payload: { number: bill.number, total: roundMoney(bill.total), step, mode: twoStep ? 'two_step' : 'one_step' },
+      payload: {
+        number: bill.number,
+        total: roundMoney(bill.total),
+        step,
+        mode: twoStep ? 'two_step' : 'one_step',
+      },
       correlationId,
     });
     return { approvalStatus: nextStatus };

@@ -946,10 +946,7 @@ export async function returnCustomerPayment(
         .select({ id: customerRefunds.id })
         .from(customerRefunds)
         .where(
-          and(
-            eq(customerRefunds.sourceType, 'payment'),
-            eq(customerRefunds.sourceId, paymentId),
-          ),
+          and(eq(customerRefunds.sourceType, 'payment'), eq(customerRefunds.sourceId, paymentId)),
         )
         .limit(1);
       if (refunded[0]) {
@@ -986,7 +983,8 @@ export async function returnCustomerPayment(
         rows.map((r) => r.reversalOfAllocationId).filter((v): v is string => v !== null),
       );
       const active = rows.filter(
-        (r) => r.reversalOfAllocationId === null && !reversedIds.has(r.id) && cmp(r.amount, '0') > 0,
+        (r) =>
+          r.reversalOfAllocationId === null && !reversedIds.has(r.id) && cmp(r.amount, '0') > 0,
       );
       for (const alloc of active) {
         await tx.insert(customerPaymentAllocations).values({

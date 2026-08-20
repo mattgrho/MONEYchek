@@ -5,7 +5,7 @@ import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { formatDate, todayISO } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
-import { Input, Textarea } from '@/components/ui/input';
+import { Input, MoneyInput, Textarea } from '@/components/ui/input';
 import { useToast } from '@/components/ui/toast';
 import {
   Card,
@@ -40,6 +40,14 @@ interface CompanyProfile {
 interface OnboardingState {
   profile: CompanyProfile | null;
 }
+
+interface PurchasingSettings {
+  billApprovalThreshold: string | null;
+  approvalMode: 'one_step' | 'two_step';
+  separationOfDuties: boolean;
+}
+
+const PRICE_PATTERN = /^\d*(\.\d{0,2})?$/;
 
 const US_TIME_ZONES = [
   'America/New_York',
@@ -85,6 +93,7 @@ export function CompanySettingsPage({ me }: { me: Me }) {
       />
       <CompanyForm profile={profile} me={me} />
       <FiscalCard profile={profile} me={me} />
+      {can(me, 'company.edit') ? <PurchasingCard /> : null}
     </div>
   );
 }
@@ -423,5 +432,118 @@ function FiscalCard({ profile, me }: { profile: CompanyProfile; me: Me }) {
         </form>
       </CardContent>
     </Card>
+  );
+}
+
+function PurchasingCard() {
+  const settings = useQuery({
+    queryKey: ['purchasing-settings'],
+    queryFn: () => api.get<PurchasingSettings>('/api/v1/settings/purchasing'),
+  });
+
+  return (
+    <Card className="mt-6">
+      <CardHeader>
+        <CardTitle>Purchasing controls</CardTitle>
+        <CardDescription>
+          Approval requirements applied before vendor bills can be posted.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {settings.isLoading ? <Spinner label="Loading purchasing controls" /> : null}
+        {settings.error ? <ErrorNote error={settings.error} /> : null}
+        {settings.data ? <PurchasingForm settings={settings.data} /> : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PurchasingForm({ settings }: { settings: PurchasingSettings }) {
+  const qc = useQueryClient();
+  const { toast } = useToast();
+
+  const [threshold, setThreshold] = useState(settings.billApprovalThreshold ?? '');
+  const [approvalMode, setApprovalMode] = useState<PurchasingSettings['approvalMode']>(
+    settings.approvalMode,
+  );
+  const [separationOfDuties, setSeparationOfDuties] = useState(settings.separationOfDuties);
+
+  const trimmedThreshold = threshold.trim();
+  const thresholdOk =
+    trimmedThreshold === '' ||
+    (PRICE_PATTERN.test(trimmedThreshold) && /\d/.test(trimmedThreshold));
+
+  const save = useMutation({
+    mutationFn: () =>
+      api.patch<PurchasingSettings>('/api/v1/settings/purchasing', {
+        billApprovalThreshold: trimmedThreshold === '' ? null : trimmedThreshold,
+        approvalMode,
+        separationOfDuties,
+      }),
+    onSuccess: () => {
+      toast('success', 'Purchasing controls saved');
+      void qc.invalidateQueries({ queryKey: ['purchasing-settings'] });
+    },
+    onError: (err) => toast('error', err instanceof Error ? err.message : 'Save failed'),
+  });
+
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        if (!thresholdOk) return;
+        save.mutate();
+      }}
+      className="space-y-4"
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="space-y-1.5">
+          <Label htmlFor="purchasing-approval-threshold">Bill approval threshold</Label>
+          <MoneyInput
+            id="purchasing-approval-threshold"
+            placeholder="0.00"
+            value={threshold}
+            onChange={(e) => {
+              if (PRICE_PATTERN.test(e.target.value)) setThreshold(e.target.value);
+            }}
+            aria-describedby="purchasing-approval-threshold-help"
+          />
+          <p id="purchasing-approval-threshold-help" className="text-xs text-muted-foreground">
+            Leave empty to post bills without approval.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor="purchasing-approval-mode">Approval mode</Label>
+          <Select
+            id="purchasing-approval-mode"
+            value={approvalMode}
+            onChange={(e) => setApprovalMode(e.target.value as PurchasingSettings['approvalMode'])}
+            aria-describedby="purchasing-approval-mode-help"
+          >
+            <option value="one_step">One approver</option>
+            <option value="two_step">Two different approvers (four-eyes)</option>
+          </Select>
+          <p id="purchasing-approval-mode-help" className="text-xs text-muted-foreground">
+            Two-step requires two distinct approvers, both different from whoever entered the bill.
+          </p>
+        </div>
+      </div>
+      <label className="flex items-center gap-2 text-sm" htmlFor="purchasing-separation-of-duties">
+        <input
+          id="purchasing-separation-of-duties"
+          type="checkbox"
+          className="h-4 w-4 rounded border-input"
+          checked={separationOfDuties}
+          onChange={(e) => setSeparationOfDuties(e.target.checked)}
+        />
+        The person who enters a bill can never approve it
+      </label>
+      {save.error ? <ErrorNote error={save.error} /> : null}
+      <div className="flex justify-end">
+        <Button type="submit" loading={save.isPending} disabled={!thresholdOk}>
+          Save purchasing controls
+        </Button>
+      </div>
+    </form>
   );
 }

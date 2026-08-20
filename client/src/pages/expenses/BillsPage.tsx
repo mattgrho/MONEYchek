@@ -23,7 +23,7 @@ import {
 import { Table, TBody, TD, TDMoney, TFoot, TH, THead, TR } from '@/components/ui/table';
 
 type PostingStatus = 'draft' | 'posted' | 'voided' | 'reversed';
-type ApprovalStatus = 'not_required' | 'pending' | 'approved' | 'rejected';
+type ApprovalStatus = 'not_required' | 'pending' | 'partially_approved' | 'approved' | 'rejected';
 type SettlementStatus = null | 'open' | 'partially_paid' | 'paid';
 
 interface BillListItem {
@@ -134,7 +134,7 @@ function matchesTab(bill: BillListItem, tab: StatusTab): boolean {
     case 'all':
       return true;
     case 'needs_approval':
-      return bill.approvalStatus === 'pending';
+      return bill.approvalStatus === 'pending' || bill.approvalStatus === 'partially_approved';
     case 'unpaid':
       return bill.postingStatus === 'posted' && toCents(bill.openBalance) > 0n;
     case 'paid':
@@ -162,6 +162,7 @@ function approvalBadge(status: ApprovalStatus): {
   tone: 'warning' | 'success' | 'danger';
 } | null {
   if (status === 'pending') return { label: 'Approval pending', tone: 'warning' };
+  if (status === 'partially_approved') return { label: '1 of 2 approvals', tone: 'warning' };
   if (status === 'approved') return { label: 'Approved', tone: 'success' };
   if (status === 'rejected') return { label: 'Rejected', tone: 'danger' };
   return null;
