@@ -47,31 +47,8 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Products & services', to: '/sales/products', permission: 'products.view' },
     ],
   },
-  {
-    label: 'Expenses',
-    icon: ShoppingCart,
-    items: [
-      { label: 'Vendors', to: '/expenses/vendors', permission: 'vendors.view' },
-      { label: 'Bills', to: '/expenses/bills', permission: 'bills.view' },
-      { label: 'Expenses', to: '/expenses/expenses', permission: 'expenses.view' },
-      { label: 'Bill payments', to: '/expenses/bill-payments', permission: 'bill_payments.view' },
-      {
-        label: 'Vendor credits',
-        to: '/expenses/vendor-credits',
-        permission: 'vendor_credits.view',
-      },
-    ],
-  },
-  {
-    label: 'Banking',
-    icon: Landmark,
-    items: [
-      { label: 'Bank transactions', to: '/banking/review', permission: 'banking.view' },
-      { label: 'Registers', to: '/banking/registers', permission: 'banking.view' },
-      { label: 'Rules', to: '/banking/rules', permission: 'banking.view' },
-      { label: 'Reconcile', to: '/banking/reconcile', permission: 'reconciliations.view' },
-    ],
-  },
+  // Expenses and Banking groups are appended as their phases pass their
+  // gates — navigation never points at unimplemented routes.
   {
     label: 'Accounting',
     icon: BookOpenCheck,
@@ -84,12 +61,10 @@ export const NAV_GROUPS: NavGroup[] = [
   {
     label: 'Reports',
     icon: BarChart3,
-    items: [{ label: 'All reports', to: '/reports', permission: 'reports.view' }],
-  },
-  {
-    label: 'Documents',
-    icon: FileText,
-    items: [{ label: 'Attachments', to: '/documents', permission: 'attachments.view' }],
+    items: [
+      { label: 'All reports', to: '/reports', permission: 'reports.view' },
+      { label: 'Audit log', to: '/reports/audit-log', permission: 'audit.view' },
+    ],
   },
   {
     label: 'Settings',
@@ -98,7 +73,6 @@ export const NAV_GROUPS: NavGroup[] = [
       { label: 'Company', to: '/settings/company', permission: 'company.edit' },
       { label: 'Brand', to: '/settings/brand', permission: 'brand.edit' },
       { label: 'Users & roles', to: '/settings/users', permission: 'users.view' },
-      { label: 'Audit log', to: '/settings/audit', permission: 'audit.view' },
     ],
   },
 ];

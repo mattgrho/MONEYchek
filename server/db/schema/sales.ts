@@ -513,3 +513,27 @@ export const depositComponents = pgTable(
     index('deposit_components_source_idx').on(t.organizationId, t.sourceType, t.sourceId),
   ],
 );
+
+export const customerRefunds = pgTable(
+  'customer_refunds',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    customerId: uuid('customer_id')
+      .notNull()
+      .references(() => customers.id),
+    sourceType: text('source_type', { enum: ['credit_memo', 'payment'] }).notNull(),
+    sourceId: uuid('source_id').notNull(),
+    refundDate: date('refund_date').notNull(),
+    amount: numeric('amount', { precision: 20, scale: 4 }).notNull(),
+    bankAccountId: uuid('bank_account_id')
+      .notNull()
+      .references(() => accounts.id),
+    journalEntryId: uuid('journal_entry_id').references(() => journalEntries.id),
+    memo: text('memo'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('customer_refunds_source_idx').on(t.organizationId, t.sourceType, t.sourceId)],
+);

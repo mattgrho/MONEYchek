@@ -5,6 +5,10 @@ import { usersRouter } from './users';
 import { dashboardRouter } from './dashboard';
 import { accountingRouter } from './accounting';
 import { reportsRouter } from './reports';
+import { onboardingRouter } from './onboarding';
+import { salesRouter } from './sales';
+import { arRouter } from './ar';
+import { apRouter } from './ap';
 
 /**
  * /api/v1 composition. Every router below attachAuth sees req.identity /
@@ -18,5 +22,9 @@ export function buildApiRouter(): Router {
   api.use(requireAuth, requireMember, dashboardRouter);
   api.use(requireAuth, requireMember, accountingRouter);
   api.use(requireAuth, requireMember, reportsRouter);
+  api.use(requireAuth, requireMember, onboardingRouter);
+  api.use(requireAuth, requireMember, salesRouter);
+  api.use(requireAuth, requireMember, arRouter);
+  api.use(requireAuth, requireMember, apRouter);
   return api;
 }

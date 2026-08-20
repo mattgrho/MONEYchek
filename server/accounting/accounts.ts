@@ -28,23 +28,20 @@ export interface SystemAccountDef {
   number: string;
   category: AccountCategory;
   detailType: string;
-  settingsColumn: keyof typeof SETTINGS_COLUMNS;
+  settingsColumn:
+    | 'arAccountId'
+    | 'apAccountId'
+    | 'undepositedFundsAccountId'
+    | 'openingBalanceEquityAccountId'
+    | 'retainedEarningsAccountId'
+    | 'salesTaxPayableAccountId'
+    | 'inventoryAssetAccountId'
+    | 'inventoryAdjustmentAccountId'
+    | 'cogsAccountId'
+    | 'defaultIncomeAccountId'
+    | 'defaultExpenseAccountId'
+    | 'badDebtAccountId';
 }
-
-const SETTINGS_COLUMNS = {
-  arAccountId: accountingSettings.arAccountId,
-  apAccountId: accountingSettings.apAccountId,
-  undepositedFundsAccountId: accountingSettings.undepositedFundsAccountId,
-  openingBalanceEquityAccountId: accountingSettings.openingBalanceEquityAccountId,
-  retainedEarningsAccountId: accountingSettings.retainedEarningsAccountId,
-  salesTaxPayableAccountId: accountingSettings.salesTaxPayableAccountId,
-  inventoryAssetAccountId: accountingSettings.inventoryAssetAccountId,
-  inventoryAdjustmentAccountId: accountingSettings.inventoryAdjustmentAccountId,
-  cogsAccountId: accountingSettings.cogsAccountId,
-  defaultIncomeAccountId: accountingSettings.defaultIncomeAccountId,
-  defaultExpenseAccountId: accountingSettings.defaultExpenseAccountId,
-  badDebtAccountId: accountingSettings.badDebtAccountId,
-} as const;
 
 /** Protected accounts every organization gets. Types are locked forever. */
 export const SYSTEM_ACCOUNTS: SystemAccountDef[] = [
