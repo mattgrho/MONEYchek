@@ -11,6 +11,7 @@ import { arRouter } from './ar';
 import { apRouter } from './ap';
 import { purchaseOrdersRouter } from './purchase-orders';
 import { retainersRouter } from './retainers';
+import { salesTaxRouter } from './sales-tax';
 import { bankingRouter } from './banking';
 import { documentsRouter } from './documents';
 import { exportsRouter } from './exports';
@@ -34,6 +35,7 @@ export function buildApiRouter(): Router {
   api.use(requireAuth, requireMember, apRouter);
   api.use(requireAuth, requireMember, purchaseOrdersRouter);
   api.use(requireAuth, requireMember, retainersRouter);
+  api.use(requireAuth, requireMember, salesTaxRouter);
   api.use(requireAuth, requireMember, bankingRouter);
   api.use(requireAuth, requireMember, documentsRouter);
   api.use(requireAuth, requireMember, exportsRouter);

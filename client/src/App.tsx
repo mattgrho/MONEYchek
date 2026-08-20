@@ -41,6 +41,8 @@ import { BankRulesPage } from '@/pages/banking/BankRulesPage';
 import { ReconcilePage } from '@/pages/banking/ReconcilePage';
 import { RegistersPage } from '@/pages/banking/RegistersPage';
 import { AccountsPage } from '@/pages/accounting/AccountsPage';
+import { InventoryPage } from '@/pages/accounting/InventoryPage';
+import { SalesTaxPage } from '@/pages/accounting/SalesTaxPage';
 import { AccountRegisterPage } from '@/pages/accounting/AccountRegisterPage';
 import { JournalsPage } from '@/pages/accounting/JournalsPage';
 import { PeriodsPage } from '@/pages/accounting/PeriodsPage';
@@ -113,6 +115,8 @@ function Gate() {
         <Route path="/banking/reconcile" element={<ReconcilePage me={me} />} />
         <Route path="/accounting/accounts" element={<AccountsPage me={me} />} />
         <Route path="/accounting/accounts/:id/register" element={<AccountRegisterPage me={me} />} />
+        <Route path="/accounting/inventory" element={<InventoryPage me={me} />} />
+        <Route path="/accounting/sales-tax" element={<SalesTaxPage me={me} />} />
         <Route path="/accounting/journals" element={<JournalsPage me={me} />} />
         <Route path="/accounting/periods" element={<PeriodsPage me={me} />} />
         <Route path="/reports" element={<ReportsHubPage me={me} />} />

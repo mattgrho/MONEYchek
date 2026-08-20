@@ -24,7 +24,7 @@ import {
 } from '@/components/ui/primitives';
 import { Table, TBody, TD, TDMoney, TH, THead, TR } from '@/components/ui/table';
 
-type ProductType = 'service' | 'non_inventory';
+type ProductType = 'service' | 'non_inventory' | 'inventory';
 
 interface Product {
   id: string;
@@ -62,6 +62,7 @@ interface TaxRate {
 const TYPE_LABELS: Record<ProductType, string> = {
   service: 'Service',
   non_inventory: 'Non-inventory',
+  inventory: 'Inventory',
 };
 
 const INCOME_CATEGORIES = new Set(['income', 'other_income']);
@@ -283,10 +284,12 @@ export function ProductsPage({ me }: { me: Me }) {
           >
             <option value="service">Service</option>
             <option value="non_inventory">Non-inventory</option>
+            <option value="inventory">Inventory (tracked quantity, FIFO cost)</option>
           </Select>
           <p className="text-xs text-muted-foreground">
-            Inventory tracking is a gated feature; services and non-inventory items do not track
-            quantity on hand.
+            {form.type === 'inventory'
+              ? 'Stock arrives through posted bills (or adjustments) and is relieved at FIFO cost when invoices post. See Accounting → Inventory for on-hand values.'
+              : 'Services and non-inventory items do not track quantity on hand.'}
           </p>
         </div>
       ) : (

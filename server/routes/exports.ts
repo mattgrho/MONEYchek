@@ -50,6 +50,7 @@ const EXPORT_TABLES = {
   sales_receipt_lines: schema.salesReceiptLines,
   deposits: schema.deposits,
   deposit_components: schema.depositComponents,
+  inventory_adjustments: schema.inventoryAdjustments,
   customer_retainers: schema.customerRetainers,
   retainer_applications: schema.retainerApplications,
   vendors: schema.vendors,

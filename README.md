@@ -48,6 +48,14 @@ prerequisite are listed truthfully in [BUILD_STATUS.md](BUILD_STATUS.md).
   AR/AP aging with control-account tie-outs asserted, account registers,
   audit log with chain verification. CSV export with formula-injection
   protection; PDF documents render server-side deterministically.
+- **Inventory**: inventory-type products with perpetual FIFO layers — bills
+  receive stock, invoices relieve it at exact layer cost, audited quantity
+  adjustments (shrinkage/counts) post to a protected adjustments account,
+  and the valuation page asserts the subledger ties to the Inventory Asset
+  ledger balance on every load.
+- **Sales tax center**: collections by agency from posted documents,
+  remittances that post directly against the protected Sales Tax Payable
+  account, and rate management (posted documents keep frozen tax snapshots).
 - **Data ownership**: audited owner full-data export (every table + manifest
   with row counts and checksums), private attachments with type/magic-byte
   validation behind a storage adapter.
@@ -199,15 +207,14 @@ reversals, close/reopen, reconciliation, exports, and uploads.
 
 ## Known limitations (honest list)
 
-- **Gated features (hidden, not half-built)**: inventory UI (subledger and
-  posting are complete and tested; navigation stays hidden until the full
-  module gate passes), sales-tax center UI beyond manual rates on documents,
-  projects/time, budgets/recurring/cash outlook, OFX/QFX, XLSX, cash-basis
-  reports, Statement of Cash Flows, payroll-journal import, custom fields,
-  saved views, global search, command palette, PWA.
-- Sales tax is one combined manual rate per document (agency/components
-  model is schema-ready); tax liability reporting beyond the Trial Balance
-  row is pending the gated tax module.
+- **Gated features (hidden, not half-built)**: projects/time,
+  budgets/recurring/cash outlook, OFX/QFX, XLSX, cash-basis reports,
+  Statement of Cash Flows, payroll-journal import, custom fields, saved
+  views, global search, command palette, PWA.
+- Sales tax is one combined manual rate per document; the Sales tax center
+  reports collections by agency and records remittances, but there is no
+  multi-component (state+county+city stacked) rate model and no automated
+  rate lookup — a CPA should verify the configuration per jurisdiction.
 - Terminology aliases, navigation reordering, and per-user dashboards are
   not yet configurable.
 - Master-record lists (customers, vendors, products) are alphabetical with a

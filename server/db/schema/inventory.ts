@@ -71,3 +71,35 @@ export const inventoryConsumptions = pgTable(
     index('inventory_consumptions_source_idx').on(t.organizationId, t.sourceType, t.sourceId),
   ],
 );
+
+/**
+ * Manual quantity adjustments (shrinkage, counts, found stock). Each row is
+ * one posted adjustment: increases create a new FIFO layer at the given
+ * unit cost, decreases consume FIFO layers; both post against the protected
+ * Inventory Adjustments account.
+ */
+export const inventoryAdjustments = pgTable(
+  'inventory_adjustments',
+  {
+    id: id(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => productsServices.id),
+    adjustmentDate: date('adjustment_date').notNull(),
+    direction: text('direction', { enum: ['increase', 'decrease'] }).notNull(),
+    quantity: numeric('quantity', { precision: 20, scale: 6 }).notNull(),
+    /** Unit cost for increases; null for decreases (FIFO decides the cost). */
+    unitCost: numeric('unit_cost', { precision: 20, scale: 6 }),
+    totalValue: numeric('total_value', { precision: 20, scale: 4 }).notNull(),
+    reason: text('reason').notNull(),
+    journalEntryId: uuid('journal_entry_id')
+      .notNull()
+      .references(() => journalEntries.id),
+    createdByUserId: uuid('created_by_user_id'),
+    createdAt: createdAt(),
+  },
+  (t) => [index('inventory_adjustments_org_product_idx').on(t.organizationId, t.productId)],
+);

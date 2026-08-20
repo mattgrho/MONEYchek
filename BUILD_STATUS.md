@@ -53,9 +53,17 @@ completed work.
       (allocation reversal, deposit-aware bank credit, aging exclusion).
       23 integration tests. Migrations 0005 + 0006 (incl. role backfill and
       append-only triggers).
-- [ ] Phases 8+ — Remaining gated extensions: NOT started (inventory UI, tax
-      center, projects/time, budgets/recurring, OFX/QFX, XLSX, cash-basis,
-      SoCF, payroll import). Navigation for these does not exist.
+- [x] Inventory module — inventory-type products creatable, valuation page
+      with live subledger↔GL tie-out, audited FIFO quantity adjustments
+      (increase at stated cost / decrease at layer cost), migration 0007,
+      9 integration tests.
+- [x] Sales-tax center — liability by agency from posted documents,
+      remittances via the reserved tax_payment source (control-account
+      protected), tax-rate management with frozen-snapshot safety,
+      5 integration tests.
+- [ ] Phases 8+ — Remaining gated extensions: NOT started (projects/time,
+      budgets/recurring, OFX/QFX, XLSX, cash-basis, SoCF, payroll import).
+      Navigation for these does not exist.
 
 Label claimed: **Prototype Core source-complete** (fresh clone → npm ci →
 migrate TEST_DATABASE_URL → verify:release passes with test-only adapters).
@@ -96,8 +104,7 @@ in this build environment; see External prerequisites).
 
 ## Next actions (in order)
 
-1. Inventory UI gate (subledger already complete + tested).
-2. Manual sales-tax center (agencies/components/liability report) on the
-   existing tax_rates schema.
-3. Email outbox worker behind a real provider config; recurring templates
+1. Email outbox worker behind a real provider config; recurring templates
    via Scheduled Deployment.
+2. Remaining gated extensions (projects/time, budgets/recurring, OFX/QFX,
+   XLSX, cash-basis, SoCF, payroll import) as separate gates.

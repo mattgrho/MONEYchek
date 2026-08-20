@@ -15,6 +15,11 @@ import { COA_TEMPLATES } from '../accounting/accounts';
 import { accountBalances, accountRegister } from '../reports/financial';
 import { closeChecklist } from '../reports/close-checklist';
 import {
+  adjustInventory,
+  inventoryValuation,
+  listInventoryAdjustments,
+} from '../services/inventory';
+import {
   createAccount,
   createManualJournal,
   deleteAccount,
@@ -321,6 +326,53 @@ accountingRouter.post(
     const body = parseBody(req, ReverseSchema);
     const result = await reverseManualJournal(getDb(), ctx, id, body, req.correlationId);
     res.json(result);
+  }),
+);
+
+/* -------------------------------- Inventory ------------------------------ */
+
+accountingRouter.get(
+  '/inventory/valuation',
+  requirePermission('products.view'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    res.json(await inventoryValuation(getDb(), ctx.organizationId));
+  }),
+);
+
+accountingRouter.get(
+  '/inventory/adjustments',
+  requirePermission('products.view'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const items = await listInventoryAdjustments(getDb(), ctx.organizationId);
+    const { roundMoney } = await import('@shared/money');
+    res.json({
+      items: items.map((a) => ({ ...a, totalValue: roundMoney(a.totalValue) })),
+    });
+  }),
+);
+
+accountingRouter.post(
+  '/inventory/adjustments',
+  requirePermission('products.edit'),
+  rateLimit({ name: 'posting', limit: 120, windowSeconds: 60 }),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const body = parseBody(
+      req,
+      z.object({
+        productId: z.string().uuid(),
+        adjustmentDate: DateString,
+        direction: z.enum(['increase', 'decrease']),
+        quantity: MoneyString,
+        unitCost: MoneyString.optional(),
+        reason: z.string().min(3).max(500),
+        idempotencyKey: z.string().min(8).max(200),
+      }),
+    );
+    const result = await adjustInventory(getDb(), ctx, body, req.correlationId);
+    res.status(201).json(result);
   }),
 );
 

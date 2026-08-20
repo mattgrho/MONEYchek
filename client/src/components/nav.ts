@@ -84,6 +84,8 @@ export const NAV_GROUPS: NavGroup[] = [
     icon: BookOpenCheck,
     items: [
       { label: 'Chart of accounts', to: '/accounting/accounts', permission: 'accounts.view' },
+      { label: 'Inventory', to: '/accounting/inventory', permission: 'products.view' },
+      { label: 'Sales tax', to: '/accounting/sales-tax', permission: 'reports.view' },
       { label: 'Journal entries', to: '/accounting/journals', permission: 'journals.view' },
       { label: 'Periods & close', to: '/accounting/periods', permission: 'periods.view' },
     ],

@@ -102,7 +102,7 @@ salesRouter.patch(
 /* --------------------------- Products & services ------------------------- */
 
 const ProductSchema = z.object({
-  type: z.enum(['service', 'non_inventory']),
+  type: z.enum(['service', 'non_inventory', 'inventory']),
   name: z.string().min(1).max(200),
   sku: z.string().max(60).optional().nullable(),
   salesDescription: z.string().max(1000).optional().nullable(),
@@ -222,6 +222,44 @@ salesRouter.post(
         throw err;
       });
     res.status(201).json(row);
+  }),
+);
+
+salesRouter.patch(
+  '/tax-rates/:id',
+  requirePermission('company.edit'),
+  asyncHandler(async (req, res) => {
+    const ctx = orgCtx(req);
+    const { id } = parseParams(req, IdParam);
+    const body = parseBody(
+      req,
+      z.object({
+        name: z.string().min(1).max(120).optional(),
+        agencyName: z.string().max(200).optional(),
+        ratePercent: z
+          .string()
+          .regex(/^\d{1,2}(\.\d{1,4})?$/)
+          .optional(),
+        active: z.boolean().optional(),
+      }),
+    );
+    const patch: Record<string, unknown> = { updatedAt: new Date() };
+    if (body.name !== undefined) patch.name = body.name;
+    if (body.agencyName !== undefined) patch.agencyName = body.agencyName;
+    if (body.active !== undefined) patch.active = body.active;
+    if (body.ratePercent !== undefined) {
+      const { div } = await import('@shared/money');
+      // Posted documents keep their frozen tax snapshots; only future
+      // documents pick up the new rate.
+      patch.rate = div(body.ratePercent, '100');
+    }
+    const updated = await getDb()
+      .update(taxRates)
+      .set(patch)
+      .where(and(eq(taxRates.id, id), eq(taxRates.organizationId, ctx.organizationId)))
+      .returning();
+    if (!updated[0]) throw AppError.notFound('Tax rate not found');
+    res.json(updated[0]);
   }),
 );
 
