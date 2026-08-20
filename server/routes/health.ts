@@ -1,15 +1,13 @@
 import { Router } from 'express';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { getPool } from '../db/client';
 import { getEnv } from '../config/env';
 import { asyncHandler } from '../middleware/validate';
 
-const MIGRATIONS_DIR = path.resolve(
-  path.dirname(fileURLToPath(import.meta.url)),
-  '../../db/migrations',
-);
+import { repoRoot } from '../lib/root';
+
+const MIGRATIONS_DIR = path.join(repoRoot, 'db/migrations');
 
 export const healthRouter = Router();
 

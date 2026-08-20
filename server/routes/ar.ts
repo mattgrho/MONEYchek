@@ -203,7 +203,7 @@ arRouter.get(
       invoice.postingStatus === 'posted'
         ? await db.transaction((tx) => invoiceOpenBalance(tx, id))
         : '0.00';
-    const { roundMoney } = await import('@shared/money');
+    const { roundMoney, cmp: cmpMoney } = await import('@shared/money');
     res.json({
       ...invoice,
       subtotal: roundMoney(invoice.subtotal),
@@ -213,6 +213,14 @@ arRouter.get(
       paymentAllocations: allocations.map((a) => ({ ...a, amount: roundMoney(a.amount) })),
       creditAllocations: credits.map((c) => ({ ...c, amount: roundMoney(c.amount) })),
       openBalance,
+      settlementStatus:
+        invoice.postingStatus !== 'posted'
+          ? null
+          : cmpMoney(openBalance, '0') <= 0
+            ? 'paid'
+            : cmpMoney(openBalance, invoice.total) < 0
+              ? 'partially_paid'
+              : 'open',
     });
   }),
 );

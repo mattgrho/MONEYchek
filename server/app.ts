@@ -2,7 +2,6 @@ import express, { type Express } from 'express';
 import helmet from 'helmet';
 import path from 'node:path';
 import fs from 'node:fs';
-import { fileURLToPath } from 'node:url';
 import { pinoHttp } from 'pino-http';
 import { getEnv } from './config/env';
 import { logger } from './lib/logger';
@@ -13,7 +12,7 @@ import { healthRouter } from './routes/health';
 import { publicRouter } from './routes/public';
 import { buildApiRouter } from './routes/index';
 
-const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+import { repoRoot as rootDir } from './lib/root';
 
 export async function createApp(): Promise<Express> {
   const env = getEnv();
@@ -72,7 +71,12 @@ export async function createApp(): Promise<Express> {
   // Unknown API path: JSON 404 (never the SPA shell).
   app.use('/api', (_req, _res, next) => next(AppError.notFound('Unknown API endpoint')));
 
-  if (env.NODE_ENV === 'production') {
+  if (
+    env.NODE_ENV === 'production' ||
+    (env.NODE_ENV === 'test' && fs.existsSync(path.join(rootDir, 'dist/client/index.html')))
+  ) {
+    // Production always serves the built client; test mode serves it when a
+    // build exists (Playwright E2E runs against the real build).
     const clientDir = path.join(rootDir, 'dist/client');
     const indexHtml = path.join(clientDir, 'index.html');
     app.use(

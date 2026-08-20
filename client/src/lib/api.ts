@@ -70,3 +70,33 @@ export const api = {
   put: <T>(url: string, body?: unknown) => requestJson<T>('PUT', url, body),
   delete: <T>(url: string) => requestJson<T>('DELETE', url),
 };
+
+/** Multipart upload with the same auth handling as JSON requests. */
+export async function apiUpload<T>(url: string, formData: FormData): Promise<T> {
+  const headers: Record<string, string> = { Accept: 'application/json' };
+  const getter = tokenGetter;
+  if (getter) {
+    const token = await getter();
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+  }
+  const res = await fetch(url, {
+    method: 'POST',
+    headers,
+    credentials: 'same-origin',
+    body: formData,
+  });
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    // handled below
+  }
+  if (!res.ok) {
+    const err = (json as { error?: ApiErrorBody } | null)?.error;
+    throw new ApiError(
+      res.status,
+      err ?? { code: 'UNKNOWN', message: `Upload failed (${res.status})` },
+    );
+  }
+  return json as T;
+}

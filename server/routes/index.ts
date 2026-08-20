@@ -10,6 +10,9 @@ import { salesRouter } from './sales';
 import { arRouter } from './ar';
 import { apRouter } from './ap';
 import { bankingRouter } from './banking';
+import { documentsRouter } from './documents';
+import { exportsRouter } from './exports';
+import { attachmentsRouter } from './attachments';
 
 /**
  * /api/v1 composition. Every router below attachAuth sees req.identity /
@@ -28,5 +31,8 @@ export function buildApiRouter(): Router {
   api.use(requireAuth, requireMember, arRouter);
   api.use(requireAuth, requireMember, apRouter);
   api.use(requireAuth, requireMember, bankingRouter);
+  api.use(requireAuth, requireMember, documentsRouter);
+  api.use(requireAuth, requireMember, exportsRouter);
+  api.use(requireAuth, requireMember, attachmentsRouter);
   return api;
 }

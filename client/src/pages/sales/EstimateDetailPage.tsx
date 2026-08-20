@@ -281,6 +281,13 @@ export function EstimateDetailPage({ me }: { me: Me }) {
         description={`For ${est.customerName}`}
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <a
+              href={`/api/v1/estimates/${est.id}/pdf`}
+              download
+              className="inline-flex h-9 items-center justify-center gap-2 rounded-md border border-input bg-transparent px-4 py-2 text-sm font-medium transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              Download PDF
+            </a>
             {canEdit && est.status === 'draft' ? (
               <Button
                 loading={transition.isPending && transition.variables?.status === 'sent'}

@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { api } from '@/lib/api';
 import type { Me } from '@/lib/types';
@@ -16,11 +15,12 @@ import {
   ErrorNote,
   Label,
   PageHeader,
+  Select,
   Spinner,
 } from '@/components/ui/primitives';
 import { Table, TBody, TD, TH, THead, TR } from '@/components/ui/table';
 
-interface Customer {
+interface Vendor {
   id: string;
   displayName: string;
   companyName: string | null;
@@ -28,38 +28,53 @@ interface Customer {
   email: string | null;
   phone: string | null;
   termsDays: number | null;
-  taxExempt: boolean;
+  is1099Eligible: boolean;
+  defaultExpenseAccountId: string | null;
   notes: string | null;
   active: boolean;
 }
 
-interface CustomerForm {
+interface Account {
+  id: string;
+  number: string | null;
+  name: string;
+  category: string;
+  detailType: string | null;
+  systemKey: string | null;
+  bankKind: 'bank' | 'credit_card' | null;
+  active: boolean;
+}
+
+interface VendorForm {
   displayName: string;
   companyName: string;
   contactName: string;
   email: string;
   phone: string;
   termsDays: string;
-  taxExempt: boolean;
+  is1099Eligible: boolean;
+  defaultExpenseAccountId: string;
   notes: string;
   active: boolean;
 }
 
-const EMPTY_FORM: CustomerForm = {
+const EMPTY_FORM: VendorForm = {
   displayName: '',
   companyName: '',
   contactName: '',
   email: '',
   phone: '',
   termsDays: '',
-  taxExempt: false,
+  is1099Eligible: false,
+  defaultExpenseAccountId: '',
   notes: '',
   active: true,
 };
 
 const TERMS_PATTERN = /^\d{0,3}$/;
+const EXPENSE_ACCOUNT_CATEGORIES = new Set(['expense', 'cogs']);
 
-function toPayload(form: CustomerForm, includeActive: boolean) {
+function toPayload(form: VendorForm, includeActive: boolean) {
   const opt = (v: string): string | null => (v.trim() === '' ? null : v.trim());
   const payload: {
     displayName: string;
@@ -68,7 +83,8 @@ function toPayload(form: CustomerForm, includeActive: boolean) {
     email: string | null;
     phone: string | null;
     termsDays: number | null;
-    taxExempt: boolean;
+    is1099Eligible: boolean;
+    defaultExpenseAccountId: string | null;
     notes: string | null;
     active?: boolean;
   } = {
@@ -78,89 +94,98 @@ function toPayload(form: CustomerForm, includeActive: boolean) {
     email: opt(form.email),
     phone: opt(form.phone),
     termsDays: form.termsDays.trim() === '' ? null : Number.parseInt(form.termsDays.trim(), 10),
-    taxExempt: form.taxExempt,
+    is1099Eligible: form.is1099Eligible,
+    defaultExpenseAccountId:
+      form.defaultExpenseAccountId === '' ? null : form.defaultExpenseAccountId,
     notes: opt(form.notes),
   };
   if (includeActive) payload.active = form.active;
   return payload;
 }
 
-export function CustomersPage({ me }: { me: Me }) {
+export function VendorsPage({ me }: { me: Me }) {
   const qc = useQueryClient();
-  const navigate = useNavigate();
   const { toast } = useToast();
 
   const [search, setSearch] = useState('');
   const [showInactive, setShowInactive] = useState(false);
 
   const [createOpen, setCreateOpen] = useState(false);
-  const [editing, setEditing] = useState<Customer | null>(null);
-  const [form, setForm] = useState<CustomerForm>(EMPTY_FORM);
+  const [editing, setEditing] = useState<Vendor | null>(null);
+  const [form, setForm] = useState<VendorForm>(EMPTY_FORM);
 
-  const canCreate = can(me, 'customers.create');
-  const canEdit = can(me, 'customers.edit');
+  const canCreate = can(me, 'vendors.create');
+  const canEdit = can(me, 'vendors.edit');
 
-  const customers = useQuery({
-    queryKey: ['customers', { includeInactive: showInactive }],
+  const vendors = useQuery({
+    queryKey: ['vendors', { includeInactive: showInactive }],
     queryFn: () =>
-      api.get<{ items: Customer[] }>(
-        `/api/v1/customers${showInactive ? '?includeInactive=true' : ''}`,
-      ),
+      api.get<{ items: Vendor[] }>(`/api/v1/vendors${showInactive ? '?includeInactive=true' : ''}`),
+  });
+  const accounts = useQuery({
+    queryKey: ['accounts', 'for-vendors'],
+    queryFn: () => api.get<{ items: Account[] }>('/api/v1/accounts'),
+    enabled: canCreate || canEdit,
   });
 
-  const createCustomer = useMutation({
-    mutationFn: (f: CustomerForm) => api.post<Customer>('/api/v1/customers', toPayload(f, false)),
-    onSuccess: () => {
-      toast('success', 'Customer created');
+  const expenseAccountOptions = (accounts.data?.items ?? []).filter(
+    (a) => a.active && EXPENSE_ACCOUNT_CATEGORIES.has(a.category),
+  );
+
+  const createVendor = useMutation({
+    mutationFn: (f: VendorForm) => api.post<Vendor>('/api/v1/vendors', toPayload(f, false)),
+    onSuccess: (row) => {
+      toast('success', `Vendor ${row.displayName} created`);
       setCreateOpen(false);
       setForm(EMPTY_FORM);
-      void qc.invalidateQueries({ queryKey: ['customers'] });
+      void qc.invalidateQueries({ queryKey: ['vendors'] });
     },
   });
 
-  const updateCustomer = useMutation({
-    mutationFn: (input: { id: string; form: CustomerForm }) =>
-      api.patch<Customer>(`/api/v1/customers/${input.id}`, toPayload(input.form, true)),
+  const updateVendor = useMutation({
+    mutationFn: (input: { id: string; form: VendorForm }) =>
+      api.patch<Vendor>(`/api/v1/vendors/${input.id}`, toPayload(input.form, true)),
     onSuccess: () => {
-      toast('success', 'Customer updated');
+      toast('success', 'Vendor updated');
       setEditing(null);
-      void qc.invalidateQueries({ queryKey: ['customers'] });
+      void qc.invalidateQueries({ queryKey: ['vendors'] });
     },
   });
 
   const filtered = useMemo(() => {
-    const items = customers.data?.items ?? [];
+    const items = vendors.data?.items ?? [];
     const q = search.trim().toLowerCase();
     if (!q) return items;
-    return items.filter((c) =>
-      [c.displayName, c.companyName ?? '', c.contactName ?? '', c.email ?? '', c.phone ?? '']
+    return items.filter((v) =>
+      [v.displayName, v.companyName ?? '', v.contactName ?? '', v.email ?? '', v.phone ?? '']
         .join(' ')
         .toLowerCase()
         .includes(q),
     );
-  }, [customers.data, search]);
+  }, [vendors.data, search]);
 
   function openCreate() {
-    createCustomer.reset();
+    createVendor.reset();
     setForm(EMPTY_FORM);
     setCreateOpen(true);
   }
 
-  function openEdit(c: Customer) {
+  function openEdit(v: Vendor) {
     if (!canEdit) return;
-    updateCustomer.reset();
+    updateVendor.reset();
     setForm({
-      displayName: c.displayName,
-      companyName: c.companyName ?? '',
-      contactName: c.contactName ?? '',
-      email: c.email ?? '',
-      phone: c.phone ?? '',
-      termsDays: c.termsDays === null ? '' : String(c.termsDays),
-      taxExempt: c.taxExempt,
-      notes: c.notes ?? '',
-      active: c.active,
+      displayName: v.displayName,
+      companyName: v.companyName ?? '',
+      contactName: v.contactName ?? '',
+      email: v.email ?? '',
+      phone: v.phone ?? '',
+      termsDays: v.termsDays === null ? '' : String(v.termsDays),
+      is1099Eligible: v.is1099Eligible,
+      defaultExpenseAccountId: v.defaultExpenseAccountId ?? '',
+      notes: v.notes ?? '',
+      active: v.active,
     });
-    setEditing(c);
+    setEditing(v);
   }
 
   const formFields = (idPrefix: string, isEdit: boolean) => (
@@ -212,20 +237,52 @@ export function CustomersPage({ me }: { me: Me }) {
           />
         </div>
       </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-terms`}>Payment terms (days)</Label>
+          <Input
+            id={`${idPrefix}-terms`}
+            inputMode="numeric"
+            placeholder="e.g. 30"
+            value={form.termsDays}
+            onChange={(e) => {
+              const raw = e.target.value;
+              if (TERMS_PATTERN.test(raw)) setForm((f) => ({ ...f, termsDays: raw }));
+            }}
+          />
+          <p className="text-xs text-muted-foreground">
+            Default number of days until bills from this vendor are due.
+          </p>
+        </div>
+        <div className="space-y-1.5">
+          <Label htmlFor={`${idPrefix}-default-account`}>Default expense account</Label>
+          <Select
+            id={`${idPrefix}-default-account`}
+            value={form.defaultExpenseAccountId}
+            onChange={(e) => setForm((f) => ({ ...f, defaultExpenseAccountId: e.target.value }))}
+          >
+            <option value="">No default</option>
+            {expenseAccountOptions.map((a) => (
+              <option key={a.id} value={a.id}>
+                {a.number ? `${a.number} · ${a.name}` : a.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      </div>
       <div className="space-y-1.5">
-        <Label htmlFor={`${idPrefix}-terms`}>Payment terms (days)</Label>
-        <Input
-          id={`${idPrefix}-terms`}
-          inputMode="numeric"
-          placeholder="e.g. 30"
-          value={form.termsDays}
-          onChange={(e) => {
-            const raw = e.target.value;
-            if (TERMS_PATTERN.test(raw)) setForm((f) => ({ ...f, termsDays: raw }));
-          }}
-        />
+        <label className="flex items-center gap-2 text-sm" htmlFor={`${idPrefix}-1099`}>
+          <input
+            id={`${idPrefix}-1099`}
+            type="checkbox"
+            className="h-4 w-4 rounded border-input"
+            checked={form.is1099Eligible}
+            onChange={(e) => setForm((f) => ({ ...f, is1099Eligible: e.target.checked }))}
+          />
+          1099 eligible
+        </label>
         <p className="text-xs text-muted-foreground">
-          Default number of days until invoices for this customer are due.
+          Tracked for the 1099 review report; nothing is filed automatically.
         </p>
       </div>
       <div className="space-y-1.5">
@@ -236,16 +293,6 @@ export function CustomersPage({ me }: { me: Me }) {
           onChange={(e) => setForm((f) => ({ ...f, notes: e.target.value }))}
         />
       </div>
-      <label className="flex items-center gap-2 text-sm" htmlFor={`${idPrefix}-tax-exempt`}>
-        <input
-          id={`${idPrefix}-tax-exempt`}
-          type="checkbox"
-          className="h-4 w-4 rounded border-input"
-          checked={form.taxExempt}
-          onChange={(e) => setForm((f) => ({ ...f, taxExempt: e.target.checked }))}
-        />
-        Tax exempt
-      </label>
       {isEdit ? (
         <label className="flex items-center gap-2 text-sm" htmlFor={`${idPrefix}-active`}>
           <input
@@ -264,27 +311,27 @@ export function CustomersPage({ me }: { me: Me }) {
   return (
     <div>
       <PageHeader
-        title="Customers"
-        description="Everyone you sell to. Terms and tax-exempt status flow onto new invoices for the customer."
-        actions={canCreate ? <Button onClick={openCreate}>New customer</Button> : undefined}
+        title="Vendors"
+        description="Everyone you buy from. Terms and the default expense account flow onto new bills and expenses for the vendor."
+        actions={canCreate ? <Button onClick={openCreate}>New vendor</Button> : undefined}
       />
 
       <div className="mb-4 flex flex-wrap items-center gap-4">
         <div className="w-full max-w-xs">
-          <Label htmlFor="customer-search" className="sr-only">
-            Search customers
+          <Label htmlFor="vendor-search" className="sr-only">
+            Search vendors
           </Label>
           <Input
-            id="customer-search"
+            id="vendor-search"
             type="search"
             placeholder="Search by name, company, email…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
         </div>
-        <label className="flex items-center gap-2 text-sm" htmlFor="customers-show-inactive">
+        <label className="flex items-center gap-2 text-sm" htmlFor="vendors-show-inactive">
           <input
-            id="customers-show-inactive"
+            id="vendors-show-inactive"
             type="checkbox"
             className="h-4 w-4 rounded border-input"
             checked={showInactive}
@@ -294,20 +341,20 @@ export function CustomersPage({ me }: { me: Me }) {
         </label>
       </div>
 
-      {customers.isLoading ? (
-        <Spinner label="Loading customers" />
-      ) : customers.error ? (
-        <ErrorNote error={customers.error} />
-      ) : (customers.data?.items.length ?? 0) === 0 ? (
+      {vendors.isLoading ? (
+        <Spinner label="Loading vendors" />
+      ) : vendors.error ? (
+        <ErrorNote error={vendors.error} />
+      ) : (vendors.data?.items.length ?? 0) === 0 ? (
         <EmptyState
-          title="No customers yet"
-          description="Add your first customer to start sending estimates and invoices."
-          action={canCreate ? <Button onClick={openCreate}>New customer</Button> : undefined}
+          title="No vendors yet"
+          description="Add your first vendor to start entering bills and expenses."
+          action={canCreate ? <Button onClick={openCreate}>New vendor</Button> : undefined}
         />
       ) : filtered.length === 0 ? (
         <Card>
           <CardContent className="pt-5">
-            <p className="text-sm text-muted-foreground">No customers match your search.</p>
+            <p className="text-sm text-muted-foreground">No vendors match your search.</p>
           </CardContent>
         </Card>
       ) : (
@@ -320,72 +367,52 @@ export function CustomersPage({ me }: { me: Me }) {
               <TH>Phone</TH>
               <TH>Terms</TH>
               <TH>Status</TH>
-              <TH className="w-36">Actions</TH>
+              {canEdit ? <TH className="w-20">Actions</TH> : null}
             </TR>
           </THead>
           <TBody>
-            {filtered.map((c) => (
+            {filtered.map((v) => (
               <TR
-                key={c.id}
+                key={v.id}
                 className={canEdit ? 'cursor-pointer' : undefined}
-                onClick={() => openEdit(c)}
+                onClick={() => openEdit(v)}
               >
                 <TD>
-                  <div className="font-medium">{c.displayName}</div>
-                  {c.contactName ? (
-                    <div className="text-xs text-muted-foreground">{c.contactName}</div>
+                  <div className="font-medium">{v.displayName}</div>
+                  {v.contactName ? (
+                    <div className="text-xs text-muted-foreground">{v.contactName}</div>
                   ) : null}
                 </TD>
-                <TD className="text-muted-foreground">{c.companyName ?? '—'}</TD>
-                <TD className="text-muted-foreground">{c.email ?? '—'}</TD>
-                <TD className="text-muted-foreground">{c.phone ?? '—'}</TD>
+                <TD className="text-muted-foreground">{v.companyName ?? '—'}</TD>
+                <TD className="text-muted-foreground">{v.email ?? '—'}</TD>
+                <TD className="text-muted-foreground">{v.phone ?? '—'}</TD>
                 <TD className="text-muted-foreground">
-                  {c.termsDays === null ? '—' : `Net ${c.termsDays}`}
+                  {v.termsDays === null ? '—' : `Net ${v.termsDays}`}
                 </TD>
                 <TD>
                   <span className="flex flex-wrap gap-1">
-                    {c.active ? (
+                    {v.active ? (
                       <Badge tone="success">Active</Badge>
                     ) : (
                       <Badge tone="warning">Inactive</Badge>
                     )}
-                    {c.taxExempt ? <Badge tone="info">Tax exempt</Badge> : null}
+                    {v.is1099Eligible ? <Badge tone="info">1099</Badge> : null}
                   </span>
                 </TD>
-                <TD>
-                  <div className="flex flex-wrap items-center gap-1">
+                {canEdit ? (
+                  <TD>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={(e) => {
                         e.stopPropagation();
-                        navigate(`/sales/invoices?customerId=${c.id}`);
+                        openEdit(v);
                       }}
                     >
-                      Invoices
+                      Edit
                     </Button>
-                    <a
-                      href={`/api/v1/customers/${c.id}/statement?format=pdf`}
-                      download
-                      onClick={(e) => e.stopPropagation()}
-                      className="inline-flex h-8 items-center rounded-md px-3 text-xs font-medium hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      Statement
-                    </a>
-                    {canEdit ? (
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          openEdit(c);
-                        }}
-                      >
-                        Edit
-                      </Button>
-                    ) : null}
-                  </div>
-                </TD>
+                  </TD>
+                ) : null}
               </TR>
             ))}
           </TBody>
@@ -395,20 +422,20 @@ export function CustomersPage({ me }: { me: Me }) {
       <Dialog
         open={createOpen}
         onOpenChange={setCreateOpen}
-        title="New customer"
+        title="New vendor"
         description="Only the display name is required; everything else can be filled in later."
       >
         <form
           className="space-y-4"
           onSubmit={(e) => {
             e.preventDefault();
-            createCustomer.mutate(form);
+            createVendor.mutate(form);
           }}
         >
-          {formFields('new-customer', false)}
-          {createCustomer.error ? <ErrorNote error={createCustomer.error} /> : null}
-          <Button type="submit" loading={createCustomer.isPending} className="w-full">
-            Create customer
+          {formFields('new-vendor', false)}
+          {createVendor.error ? <ErrorNote error={createVendor.error} /> : null}
+          <Button type="submit" loading={createVendor.isPending} className="w-full">
+            Create vendor
           </Button>
         </form>
       </Dialog>
@@ -418,7 +445,7 @@ export function CustomersPage({ me }: { me: Me }) {
         onOpenChange={(open) => {
           if (!open) setEditing(null);
         }}
-        title="Edit customer"
+        title="Edit vendor"
         description={editing ? editing.displayName : undefined}
       >
         {editing ? (
@@ -426,12 +453,12 @@ export function CustomersPage({ me }: { me: Me }) {
             className="space-y-4"
             onSubmit={(e) => {
               e.preventDefault();
-              updateCustomer.mutate({ id: editing.id, form });
+              updateVendor.mutate({ id: editing.id, form });
             }}
           >
-            {formFields('edit-customer', true)}
-            {updateCustomer.error ? <ErrorNote error={updateCustomer.error} /> : null}
-            <Button type="submit" loading={updateCustomer.isPending} className="w-full">
+            {formFields('edit-vendor', true)}
+            {updateVendor.error ? <ErrorNote error={updateVendor.error} /> : null}
+            <Button type="submit" loading={updateVendor.isPending} className="w-full">
               Save changes
             </Button>
           </form>

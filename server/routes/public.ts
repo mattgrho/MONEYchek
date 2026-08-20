@@ -62,6 +62,49 @@ publicRouter.get(
       themeMode: brand?.themeMode ?? 'system',
       radius: brand?.radius ?? '0.5rem',
       brandVersion: brand?.brandVersion ?? 1,
+      hasLogo: Boolean(brand?.primaryLogoAttachmentId),
     });
+  }),
+);
+
+/**
+ * The administrator-approved primary logo (raster image only). Public by
+ * design: the login page shows it before authentication. Content is limited
+ * to validated PNG/JPEG/WebP brand assets.
+ */
+publicRouter.get(
+  '/brand-logo',
+  asyncHandler(async (_req, res) => {
+    const db = getDb();
+    const orgId = await getPrimaryOrganizationId(db);
+    if (!orgId) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No logo configured' } });
+      return;
+    }
+    const [brand] = await db
+      .select()
+      .from(brandSettings)
+      .where(eq(brandSettings.organizationId, orgId))
+      .limit(1);
+    if (!brand?.primaryLogoAttachmentId) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No logo configured' } });
+      return;
+    }
+    const { attachments } = await import('../db/schema/index');
+    const [logo] = await db
+      .select()
+      .from(attachments)
+      .where(eq(attachments.id, brand.primaryLogoAttachmentId))
+      .limit(1);
+    if (!logo || !['image/png', 'image/jpeg', 'image/webp'].includes(logo.mimeType)) {
+      res.status(404).json({ error: { code: 'NOT_FOUND', message: 'No logo configured' } });
+      return;
+    }
+    const { getStorage } = await import('../storage/adapter');
+    const data = await getStorage().get(logo.storageKey);
+    res.setHeader('Content-Type', logo.mimeType);
+    res.setHeader('Cache-Control', `public, max-age=300`);
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.send(data);
   }),
 );

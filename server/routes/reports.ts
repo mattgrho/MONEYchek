@@ -37,9 +37,28 @@ reportsRouter.get(
   asyncHandler(async (req, res) => {
     const ctx = orgCtx(req);
     const { timeZone } = await fyStartMonth(ctx.organizationId);
-    const query = parseQuery(req, z.object({ asOf: DateString.optional() }));
+    const query = parseQuery(
+      req,
+      z.object({ asOf: DateString.optional(), format: z.enum(['json', 'csv']).default('json') }),
+    );
     const asOf = query.asOf ?? companyToday(timeZone);
-    res.json(await trialBalance(getDb(), ctx.organizationId, asOf));
+    const report = await trialBalance(getDb(), ctx.organizationId, asOf);
+    if (query.format === 'csv') {
+      const { toCsv } = await import('../lib/csv-out');
+      const csv = toCsv(
+        ['Account #', 'Account', 'Debit', 'Credit'],
+        [
+          ...report.rows.map((r) => [r.number, r.name, r.debit, r.credit]),
+          ['', 'TOTAL', report.totalDebits, report.totalCredits],
+        ],
+      );
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="trial-balance-${asOf}.csv"`);
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.send(csv);
+      return;
+    }
+    res.json(report);
   }),
 );
 
@@ -52,11 +71,44 @@ reportsRouter.get(
     const today = companyToday(timeZone);
     const query = parseQuery(
       req,
-      z.object({ startDate: DateString.optional(), endDate: DateString.optional() }),
+      z.object({
+        startDate: DateString.optional(),
+        endDate: DateString.optional(),
+        format: z.enum(['json', 'csv']).default('json'),
+      }),
     );
     const endDate = query.endDate ?? today;
     const startDate = query.startDate ?? `${endDate.slice(0, 4)}-01-01`;
-    res.json(await profitAndLoss(getDb(), ctx.organizationId, startDate, endDate));
+    const report = await profitAndLoss(getDb(), ctx.organizationId, startDate, endDate);
+    if (query.format === 'csv') {
+      const { toCsv } = await import('../lib/csv-out');
+      const rows: unknown[][] = [];
+      for (const section of [
+        report.income,
+        report.cogs,
+        report.expenses,
+        report.otherIncome,
+        report.otherExpenses,
+      ]) {
+        if (section.rows.length === 0) continue;
+        rows.push([section.label, '', '']);
+        for (const r of section.rows)
+          rows.push(['', `${r.number ?? ''} ${r.name}`.trim(), r.amount]);
+        rows.push(['', `Total ${section.label.toLowerCase()}`, section.total]);
+      }
+      rows.push(['', 'Gross profit', report.grossProfit]);
+      rows.push(['', 'NET INCOME', report.netIncome]);
+      const csv = toCsv(['Section', 'Account', 'Amount'], rows);
+      res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename="profit-and-loss-${startDate}-to-${endDate}.csv"`,
+      );
+      res.setHeader('Cache-Control', 'no-store, private');
+      res.send(csv);
+      return;
+    }
+    res.json(report);
   }),
 );
 

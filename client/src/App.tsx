@@ -11,6 +11,8 @@ import {
   NoAccessPage,
 } from '@/pages/gates';
 import { DashboardPage } from '@/pages/DashboardPage';
+import { DocumentsPage } from '@/pages/DocumentsPage';
+import { ExportSettingsPage } from '@/pages/settings/ExportSettingsPage';
 import { OnboardingPage } from '@/pages/OnboardingPage';
 import { UsersSettingsPage } from '@/pages/settings/UsersSettingsPage';
 import { CompanySettingsPage } from '@/pages/settings/CompanySettingsPage';
@@ -25,6 +27,16 @@ import { PaymentsPage } from '@/pages/sales/PaymentsPage';
 import { CreditMemosPage } from '@/pages/sales/CreditMemosPage';
 import { DepositsPage } from '@/pages/sales/DepositsPage';
 import { SalesReceiptsPage } from '@/pages/sales/SalesReceiptsPage';
+import { VendorsPage } from '@/pages/expenses/VendorsPage';
+import { ExpensesPage } from '@/pages/expenses/ExpensesPage';
+import { BillsPage } from '@/pages/expenses/BillsPage';
+import { BillDetailPage } from '@/pages/expenses/BillDetailPage';
+import { BillPaymentsPage } from '@/pages/expenses/BillPaymentsPage';
+import { VendorCreditsPage } from '@/pages/expenses/VendorCreditsPage';
+import { BankingReviewPage } from '@/pages/banking/BankingReviewPage';
+import { BankRulesPage } from '@/pages/banking/BankRulesPage';
+import { ReconcilePage } from '@/pages/banking/ReconcilePage';
+import { RegistersPage } from '@/pages/banking/RegistersPage';
 import { AccountsPage } from '@/pages/accounting/AccountsPage';
 import { AccountRegisterPage } from '@/pages/accounting/AccountRegisterPage';
 import { JournalsPage } from '@/pages/accounting/JournalsPage';
@@ -83,6 +95,16 @@ function Gate() {
         <Route path="/sales/credits" element={<CreditMemosPage me={me} />} />
         <Route path="/sales/deposits" element={<DepositsPage me={me} />} />
         <Route path="/sales/receipts" element={<SalesReceiptsPage me={me} />} />
+        <Route path="/expenses/vendors" element={<VendorsPage me={me} />} />
+        <Route path="/expenses/bills" element={<BillsPage me={me} />} />
+        <Route path="/expenses/bills/:id" element={<BillDetailPage me={me} />} />
+        <Route path="/expenses/expenses" element={<ExpensesPage me={me} />} />
+        <Route path="/expenses/bill-payments" element={<BillPaymentsPage me={me} />} />
+        <Route path="/expenses/vendor-credits" element={<VendorCreditsPage me={me} />} />
+        <Route path="/banking/review" element={<BankingReviewPage me={me} />} />
+        <Route path="/banking/registers" element={<RegistersPage me={me} />} />
+        <Route path="/banking/rules" element={<BankRulesPage me={me} />} />
+        <Route path="/banking/reconcile" element={<ReconcilePage me={me} />} />
         <Route path="/accounting/accounts" element={<AccountsPage me={me} />} />
         <Route path="/accounting/accounts/:id/register" element={<AccountRegisterPage me={me} />} />
         <Route path="/accounting/journals" element={<JournalsPage me={me} />} />
@@ -94,6 +116,8 @@ function Gate() {
         <Route path="/reports/general-ledger" element={<GeneralLedgerPage me={me} />} />
         <Route path="/reports/journal" element={<JournalReportPage me={me} />} />
         <Route path="/reports/audit-log" element={<AuditLogPage me={me} />} />
+        <Route path="/documents" element={<DocumentsPage me={me} />} />
+        <Route path="/settings/export" element={<ExportSettingsPage me={me} />} />
         <Route path="/settings/company" element={<CompanySettingsPage me={me} />} />
         <Route path="/settings/brand" element={<BrandSettingsPage me={me} />} />
         <Route path="/settings/users" element={<UsersSettingsPage me={me} />} />
