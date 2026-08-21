@@ -34,7 +34,12 @@ export function setTokenGetter(getter: TokenGetter | null): void {
 }
 
 async function requestJson<T>(method: string, url: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  // X-Requested-With doubles as the CSRF guard for cookie-based (local
+  // auth) sessions: cross-site form posts cannot set custom headers.
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'X-Requested-With': 'fetch',
+  };
   if (body !== undefined) headers['Content-Type'] = 'application/json';
   if (tokenGetter) {
     const token = await tokenGetter();
@@ -73,7 +78,10 @@ export const api = {
 
 /** Multipart upload with the same auth handling as JSON requests. */
 export async function apiUpload<T>(url: string, formData: FormData): Promise<T> {
-  const headers: Record<string, string> = { Accept: 'application/json' };
+  const headers: Record<string, string> = {
+    Accept: 'application/json',
+    'X-Requested-With': 'fetch',
+  };
   const getter = tokenGetter;
   if (getter) {
     const token = await getter();

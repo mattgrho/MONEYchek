@@ -36,6 +36,13 @@
       "when": 1787192660636,
       "tag": "0007_inventory_adjustments",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1787352998224,
+      "tag": "0008_local_auth",
+      "breakpoints": true
     }
   ]
 }

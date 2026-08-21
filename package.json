@@ -15,6 +15,7 @@
     "db:migrate": "tsx scripts/migrate.ts",
     "db:seed:demo": "tsx db/seeds/demo.ts",
     "perf:seed": "tsx scripts/seed-perf.ts",
+    "auth:reset-password": "tsx scripts/reset-password.ts",
     "jobs:run": "tsx scripts/jobs-run.ts",
     "format": "prettier --write .",
     "format:check": "prettier --check .",

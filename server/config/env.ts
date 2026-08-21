@@ -44,6 +44,16 @@ const EnvSchema = z.object({
     .optional()
     .or(z.literal('').transform(() => undefined)),
 
+  /**
+   * local = first-party email+password (no external identity service).
+   * clerk = Clerk via keys below. Unset = Clerk if keys exist, else the
+   * fail-closed "not configured" mode.
+   */
+  AUTH_PROVIDER: z
+    .enum(['clerk', 'local'])
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
+
   EMAIL_PROVIDER: z
     .enum(['resend'])
     .optional()

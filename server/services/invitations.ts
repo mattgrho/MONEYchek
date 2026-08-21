@@ -1,6 +1,6 @@
 import { createHash, randomBytes } from 'node:crypto';
 import { and, eq } from 'drizzle-orm';
-import type { Db } from '../db/client';
+import type { Db, Tx } from '../db/client';
 import { invitations, memberships, roles } from '../db/schema/index';
 import { AppError } from '../lib/errors';
 import { getEnv } from '../config/env';
@@ -134,8 +134,21 @@ export async function acceptInvitation(
   db: Db,
   input: { identity: AuthenticatedIdentity; userId: string; token: string; correlationId: string },
 ): Promise<{ organizationId: string }> {
+  return db.transaction((tx) => acceptInvitationInTx(tx, input));
+}
+
+/** In-transaction variant (also used by local-auth registration). */
+export async function acceptInvitationInTx(
+  tx: Tx,
+  input: {
+    identity: Pick<AuthenticatedIdentity, 'email'>;
+    userId: string;
+    token: string;
+    correlationId: string;
+  },
+): Promise<{ organizationId: string }> {
   const tokenHash = hashToken(input.token);
-  return db.transaction(async (tx) => {
+  {
     const [invitation] = await tx
       .select()
       .from(invitations)
@@ -192,5 +205,5 @@ export async function acceptInvitation(
       correlationId: input.correlationId,
     });
     return { organizationId: invitation.organizationId };
-  });
+  }
 }

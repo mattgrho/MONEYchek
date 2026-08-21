@@ -113,9 +113,28 @@ npm run db:migrate          # applies committed SQL migrations
 npm run dev                 # http://localhost:5000
 ```
 
-Without Clerk keys the app runs in "authentication not configured" mode and
-says so; there is no fallback login. Automated tests use a test-only header
-adapter that refuses to load outside `NODE_ENV=test`.
+Authentication is adapter-based with two real providers:
+
+- **Local (`AUTH_PROVIDER=local`)** — built-in email + password accounts
+  with no external identity service. Passwords are scrypt-hashed with
+  per-user salts; sessions are 256-bit server-side tokens (stored only as
+  hashes) in an httpOnly SameSite=Lax cookie, with a custom-header CSRF
+  guard on writes. Registration is closed: pre-bootstrap, only the
+  configured `BOOTSTRAP_OWNER_EMAIL` may create the owner account;
+  afterwards accounts exist only through single-use invitation tokens
+  (which is also what binds a member to their email — there is no
+  third-party email verification). Changing a password revokes every other
+  session. Honest limits: no MFA, and no self-service password reset (the
+  deployment may have no email provider). A forgotten password is an
+  operator action from the server console:
+  `npm run auth:reset-password -- --email <address>` — sets a new password
+  and signs out every session for that account.
+- **Clerk** — set `CLERK_PUBLISHABLE_KEY`/`CLERK_SECRET_KEY` (only verified
+  emails authenticate).
+
+With neither configured the app runs in "authentication not configured"
+mode and says so; there is no fallback login. Automated tests use a
+test-only header adapter that refuses to load outside `NODE_ENV=test`.
 
 ### Commands
 
@@ -158,10 +177,12 @@ were provisioned or faked. To go live:
    `npm run db:migrate` as an explicit release step — the app never
    auto-migrates on boot, and `/health/ready` fails closed with
    `SCHEMA_VERSION_MISMATCH` when code and schema disagree.
-2. **Clerk (via Replit)**: connect the integration; set
-   `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`. Only verified emails
-   authenticate. Check whether your Clerk plan exposes end-user MFA before
-   documenting it to staff.
+2. **Authentication**: simplest is `AUTH_PROVIDER=local` (built-in
+   email+password; no external service, no extra secrets). Alternatively
+   connect Clerk and set `CLERK_PUBLISHABLE_KEY` and `CLERK_SECRET_KEY`
+   (only verified emails authenticate; check whether your plan exposes
+   end-user MFA before documenting it to staff). Local auth has no MFA —
+   use strong unique passwords.
 3. **App Storage**: create a bucket; set `APP_STORAGE_BUCKET_ID`. Until then
    attachments stay hidden/fail closed (production never uses the ephemeral
    filesystem for documents).

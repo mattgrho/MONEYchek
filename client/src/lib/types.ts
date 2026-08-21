@@ -1,7 +1,9 @@
 /** Shared client-side types mirroring the API contracts. */
 
+export type AuthMode = 'clerk' | 'local' | 'test' | 'disabled';
+
 export interface AuthConfig {
-  mode: 'clerk' | 'test' | 'disabled';
+  mode: AuthMode;
   publishableKey?: string;
   bootstrapped: boolean;
 }
@@ -17,7 +19,7 @@ export interface BrandBootstrap {
 }
 
 export interface Me {
-  authMode: 'clerk' | 'test' | 'disabled';
+  authMode: AuthMode;
   authenticated: boolean;
   bootstrapped: boolean;
   user?: { id: string; email: string; name: string | null; imageUrl: string | null } | null;

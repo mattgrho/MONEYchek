@@ -40,8 +40,9 @@ export function AuthNotConfiguredPage() {
           <CardTitle>Authentication is not configured</CardTitle>
           <CardDescription>
             This deployment has no sign-in provider yet, so nobody can use it. An administrator must
-            add the Clerk credentials (CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY) to the server
-            environment and restart. There is no fallback login.
+            either set AUTH_PROVIDER=local (built-in email and password accounts) or add the Clerk
+            credentials (CLERK_PUBLISHABLE_KEY and CLERK_SECRET_KEY) to the server environment and
+            restart. There is no fallback login.
           </CardDescription>
         </CardHeader>
       </Card>
@@ -49,13 +50,21 @@ export function AuthNotConfiguredPage() {
   );
 }
 
-export function LoginPage({ mode }: { mode: 'clerk' | 'test' | 'disabled' }) {
+export function LoginPage({
+  mode,
+  bootstrapped,
+}: {
+  mode: 'clerk' | 'local' | 'test' | 'disabled';
+  bootstrapped?: boolean;
+}) {
   return (
     <GateFrame>
       {mode === 'clerk' ? (
         <div className="flex justify-center">
           <SignIn routing="hash" />
         </div>
+      ) : mode === 'local' ? (
+        <LocalLogin bootstrapped={bootstrapped ?? true} />
       ) : (
         <Card>
           <CardHeader>
@@ -68,6 +77,237 @@ export function LoginPage({ mode }: { mode: 'clerk' | 'test' | 'disabled' }) {
         </Card>
       )}
     </GateFrame>
+  );
+}
+
+/**
+ * First-party sign-in. Registration is closed: pre-bootstrap the configured
+ * owner email may create the owner account; afterwards new accounts only
+ * exist through invitation links (?token=... on this page).
+ */
+function LocalLogin({ bootstrapped }: { bootstrapped: boolean }) {
+  const [searchParams] = useSearchParams();
+  const inviteToken = searchParams.get('token');
+  const invalidateMe = useInvalidateMe();
+
+  const [view, setView] = useState<'login' | 'register-owner' | 'register-invited'>(
+    inviteToken ? 'register-invited' : 'login',
+  );
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [name, setName] = useState('');
+
+  const login = useMutation({
+    mutationFn: () => api.post('/api/v1/auth/login', { email: email.trim(), password }),
+    onSuccess: () => invalidateMe(),
+  });
+  const registerOwner = useMutation({
+    mutationFn: () =>
+      api.post('/api/v1/auth/register-owner', {
+        email: email.trim(),
+        password,
+        name: name.trim(),
+      }),
+    onSuccess: () => invalidateMe(),
+  });
+  const registerInvited = useMutation({
+    mutationFn: () =>
+      api.post('/api/v1/auth/register-with-invitation', {
+        token: inviteToken,
+        password,
+        name: name.trim(),
+      }),
+    onSuccess: () => invalidateMe(),
+  });
+
+  if (view === 'register-invited' && inviteToken) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Accept your invitation</CardTitle>
+          <CardDescription>
+            Create your account to join the company books. Your email is fixed by the invitation;
+            choose a strong password (at least 10 characters).
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              registerInvited.mutate();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-name">Your name</Label>
+              <Input
+                id="reg-name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="reg-password">Password</Label>
+              <Input
+                id="reg-password"
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {registerInvited.error ? <ErrorNote error={registerInvited.error} /> : null}
+            <Button type="submit" loading={registerInvited.isPending} className="w-full">
+              Create account and join
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setView('login')}
+            >
+              I already have an account — sign in
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (view === 'register-owner') {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Create the owner account</CardTitle>
+          <CardDescription>
+            Only the email configured as this deployment&apos;s bootstrap owner can create the first
+            account. Everyone else joins later by invitation.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          <form
+            className="space-y-4"
+            onSubmit={(e) => {
+              e.preventDefault();
+              registerOwner.mutate();
+            }}
+          >
+            <div className="space-y-1.5">
+              <Label htmlFor="owner-name">Your name</Label>
+              <Input
+                id="owner-name"
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="owner-email">Email (must match the configured owner email)</Label>
+              <Input
+                id="owner-email"
+                type="email"
+                required
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="owner-password">Password (at least 10 characters)</Label>
+              <Input
+                id="owner-password"
+                type="password"
+                required
+                minLength={10}
+                autoComplete="new-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+              />
+            </div>
+            {registerOwner.error ? <ErrorNote error={registerOwner.error} /> : null}
+            <Button type="submit" loading={registerOwner.isPending} className="w-full">
+              Create owner account
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setView('login')}
+            >
+              Back to sign in
+            </Button>
+          </form>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Sign in</CardTitle>
+        <CardDescription>Use the email and password for your account.</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            login.mutate();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="login-email">Email</Label>
+            <Input
+              id="login-email"
+              type="email"
+              required
+              autoComplete="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="login-password">Password</Label>
+            <Input
+              id="login-password"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+            />
+          </div>
+          {login.error ? <ErrorNote error={login.error} /> : null}
+          <Button type="submit" loading={login.isPending} className="w-full">
+            Sign in
+          </Button>
+          {!bootstrapped ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setView('register-owner')}
+            >
+              First time here? Create the owner account
+            </Button>
+          ) : null}
+          {inviteToken ? (
+            <Button
+              type="button"
+              variant="ghost"
+              className="w-full"
+              onClick={() => setView('register-invited')}
+            >
+              New here? Accept your invitation
+            </Button>
+          ) : null}
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 

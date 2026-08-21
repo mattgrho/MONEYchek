@@ -1,16 +1,24 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { NavLink, useLocation } from 'react-router-dom';
-import { Eye, EyeOff, LogOut, Menu, X } from 'lucide-react';
+import { Eye, EyeOff, KeyRound, LogOut, Menu, X } from 'lucide-react';
 import { useClerk } from '@clerk/clerk-react';
+import { useMutation } from '@tanstack/react-query';
 import { cn } from '@/lib/utils';
+import { api } from '@/lib/api';
+import { useInvalidateMe } from '@/lib/auth';
 import { NAV_GROUPS } from './nav';
 import type { Me } from '@/lib/types';
 import { can } from '@/lib/types';
 import { Button } from './ui/button';
+import { Dialog } from './ui/dialog';
+import { Input } from './ui/input';
+import { ErrorNote, Label } from './ui/primitives';
+import { useToast } from './ui/toast';
 
 function SignOutAction({ mode }: { mode: Me['authMode'] }) {
-  if (mode !== 'clerk') return null;
-  return <ClerkSignOut />;
+  if (mode === 'clerk') return <ClerkSignOut />;
+  if (mode === 'local') return <LocalAccountActions />;
+  return null;
 }
 
 function ClerkSignOut() {
@@ -24,6 +32,104 @@ function ClerkSignOut() {
     >
       <LogOut className="h-4 w-4" aria-hidden /> Sign out
     </Button>
+  );
+}
+
+/** Local-auth account controls: sign out + change password. */
+function LocalAccountActions() {
+  const invalidateMe = useInvalidateMe();
+  const { toast } = useToast();
+  const [changeOpen, setChangeOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+
+  const signOut = useMutation({
+    mutationFn: () => api.post('/api/v1/auth/logout'),
+    onSuccess: () => void invalidateMe(),
+  });
+  const changePassword = useMutation({
+    mutationFn: () => api.post('/api/v1/auth/change-password', { currentPassword, newPassword }),
+    onSuccess: () => {
+      toast('success', 'Password changed; your other sessions were signed out');
+      setChangeOpen(false);
+      setCurrentPassword('');
+      setNewPassword('');
+    },
+  });
+
+  return (
+    <>
+      <Button
+        variant="ghost"
+        size="sm"
+        onClick={() => {
+          changePassword.reset();
+          setChangeOpen(true);
+        }}
+        className="w-full justify-start gap-2"
+      >
+        <KeyRound className="h-4 w-4" aria-hidden /> Change password
+      </Button>
+      <Button
+        variant="ghost"
+        size="sm"
+        loading={signOut.isPending}
+        onClick={() => signOut.mutate()}
+        className="w-full justify-start gap-2"
+      >
+        <LogOut className="h-4 w-4" aria-hidden /> Sign out
+      </Button>
+      <Dialog
+        open={changeOpen}
+        onOpenChange={(open) => {
+          setChangeOpen(open);
+          if (!open) {
+            setCurrentPassword('');
+            setNewPassword('');
+          }
+        }}
+        title="Change password"
+        description="Changing your password signs out every other session on this account."
+      >
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault();
+            changePassword.mutate();
+          }}
+        >
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-current">Current password</Label>
+            <Input
+              id="cp-current"
+              type="password"
+              required
+              autoComplete="current-password"
+              value={currentPassword}
+              onChange={(e) => setCurrentPassword(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="cp-new">New password (at least 10 characters)</Label>
+            <Input
+              id="cp-new"
+              type="password"
+              required
+              minLength={10}
+              autoComplete="new-password"
+              value={newPassword}
+              onChange={(e) => setNewPassword(e.target.value)}
+            />
+          </div>
+          {changePassword.error ? <ErrorNote error={changePassword.error} /> : null}
+          <div className="flex justify-end">
+            <Button type="submit" loading={changePassword.isPending}>
+              Change password
+            </Button>
+          </div>
+        </form>
+      </Dialog>
+    </>
   );
 }
 

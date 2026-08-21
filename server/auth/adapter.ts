@@ -6,6 +6,8 @@ import type { Request } from 'express';
  *
  * Modes:
  *  - clerk:    production/development with Clerk credentials configured
+ *  - local:    first-party email+password (AUTH_PROVIDER=local); scrypt
+ *              hashes, server-side sessions, closed registration
  *  - test:     NODE_ENV=test only; header-driven identities for automated tests
  *  - disabled: no provider configured; every authenticated surface fails
  *              closed with AUTH_NOT_CONFIGURED (no fallback login exists)
@@ -20,10 +22,12 @@ export interface AuthenticatedIdentity {
   imageUrl?: string;
 }
 
+export type AuthMode = 'clerk' | 'local' | 'test' | 'disabled';
+
 export interface AuthAdapter {
-  readonly mode: 'clerk' | 'test' | 'disabled';
+  readonly mode: AuthMode;
   /** Returns the verified identity for the request, or null when anonymous. */
   authenticate(req: Request): Promise<AuthenticatedIdentity | null>;
   /** Client-safe configuration for the login UI. */
-  clientConfig(): { mode: 'clerk' | 'test' | 'disabled'; publishableKey?: string };
+  clientConfig(): { mode: AuthMode; publishableKey?: string };
 }

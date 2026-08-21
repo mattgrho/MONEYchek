@@ -109,6 +109,15 @@ in this build environment; see External prerequisites).
       live tokens). Resend NOT verified live from this environment —
       documented in README. 4 integration tests.
 
+- [x] Local (first-party) auth provider — AUTH_PROVIDER=local: scrypt
+      password hashes, server-side sessions (hashed tokens, httpOnly
+      SameSite=Lax cookie, custom-header CSRF guard on writes), closed
+      registration (bootstrap owner email pre-bootstrap; single-use
+      invitation tokens after), login/logout/change-password (revokes other
+      sessions), operator reset CLI (auth:reset-password), migration 0008,
+      login/register UI, 10 integration tests. Clerk remains available;
+      neither configured still fails closed.
+
 ## Next actions (in order)
 
 1. Remaining gated extensions (projects/time, budgets/recurring, OFX/QFX,

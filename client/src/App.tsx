@@ -69,7 +69,7 @@ function Gate() {
   if (error || !me) return <AuthNotConfiguredPage />;
 
   if (!me.authenticated) {
-    return <LoginPage mode={me.authMode} />;
+    return <LoginPage mode={me.authMode} bootstrapped={me.bootstrapped} />;
   }
   if (!me.bootstrapped) {
     return <ClaimDeploymentPage />;

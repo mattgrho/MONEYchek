@@ -423,3 +423,48 @@ export const notifications = pgTable(
   },
   (t) => [index('notifications_org_user_idx').on(t.organizationId, t.userId, t.readAt)],
 );
+
+/**
+ * First-party (local) authentication. Passwords are scrypt-hashed with
+ * per-user salts; sessions are server-side random tokens stored only as
+ * SHA-256 hashes and carried in an httpOnly cookie. Rows exist only for
+ * users created under AUTH_PROVIDER=local — the Clerk and test adapters
+ * never touch these tables.
+ */
+export const userCredentials = pgTable(
+  'user_credentials',
+  {
+    id: id(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    /** Format: scrypt$N$r$p$<salt b64url>$<hash b64url>. */
+    passwordHash: text('password_hash').notNull(),
+    passwordChangedAt: timestamp('password_changed_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    createdAt: createdAt(),
+    updatedAt: updatedAt(),
+  },
+  (t) => [uniqueIndex('user_credentials_user_uq').on(t.userId)],
+);
+
+export const authSessions = pgTable(
+  'auth_sessions',
+  {
+    id: id(),
+    /** SHA-256 of the random session token; the token itself is never stored. */
+    tokenHash: text('token_hash').notNull(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id),
+    createdAt: createdAt(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true }).notNull().defaultNow(),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex('auth_sessions_token_uq').on(t.tokenHash),
+    index('auth_sessions_user_idx').on(t.userId),
+  ],
+);

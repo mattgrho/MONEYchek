@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { attachAuth, requireAuth, requireMember } from '../middleware/auth';
 import { sessionRouter } from './session';
+import { localAuthRouter } from './local-auth';
 import { usersRouter } from './users';
 import { dashboardRouter } from './dashboard';
 import { accountingRouter } from './accounting';
@@ -25,6 +26,7 @@ export function buildApiRouter(): Router {
   const api = Router();
   api.use(attachAuth);
   api.use(sessionRouter);
+  api.use(localAuthRouter);
   api.use(requireAuth, requireMember, usersRouter);
   api.use(requireAuth, requireMember, dashboardRouter);
   api.use(requireAuth, requireMember, accountingRouter);
